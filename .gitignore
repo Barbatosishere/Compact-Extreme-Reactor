@@ -1,0 +1,26 @@
+# Gradle 构建产物
+.gradle/
+build/
+out/
+
+# IDE 配置
+.idea/
+*.iml
+.vscode/
+.settings/
+.classpath
+.project
+bin/
+
+# Minecraft / NeoForge 运行环境（本地生成，不提交）
+run/
+logs/
+crash-reports/
+
+# 系统文件
+Thumbs.db
+Desktop.ini
+*.class
+
+# 注意：libs/ 下的 ER/ZeroCore 本地 jar 依赖必须提交，
+# 否则克隆仓库后无法编译（官方 Maven 不可达，见 build.gradle）

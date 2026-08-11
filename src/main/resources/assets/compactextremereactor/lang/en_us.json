@@ -1,0 +1,15 @@
+{
+  "itemGroup.compactextremereactor": "Compact Extreme Reactor",
+  "block.compactextremereactor.compact_reactor": "Compact Reactor",
+  "block.compactextremereactor.compact_turbine": "Compact Turbine",
+  "tooltip.compactextremereactor.compact_reactor": "A full Extreme Reactor multiblock compressed into a single block.",
+  "tooltip.compactextremereactor.compact_turbine": "A full Extreme Reactor turbine multiblock compressed into a single block.",
+  "gui.compactextremereactor.control_rod": "Control Rod: %s%%",
+  "gui.compactextremereactor.toggle": "On/Off",
+  "gui.compactextremereactor.void_waste": "Void Waste",
+  "gui.compactextremereactor.fuel": "Fuel: %s",
+  "gui.compactextremereactor.energy": "%s FE",
+  "gui.compactextremereactor.power": "Power: %s FE/t",
+  "gui.compactextremereactor.steam": "Steam: %s",
+  "gui.compactextremereactor.water": "Water: %s"
+}

@@ -1,0 +1,7 @@
+{
+  "variants": {
+    "": {
+      "model": "compactextremereactor:block/compact_turbine"
+    }
+  }
+}
