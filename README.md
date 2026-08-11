@@ -1,6 +1,6 @@
 # Compact Extreme Reactor
 
-> **English** | [中文](README_zh.md)
+> **English** | [中文](README_zh_CN.md)
 
 Compress Extreme Reactors' large multiblock machines (Reactor / Turbine) into **single compact blocks** — a NeoForge 1.21.1 mod.
 
