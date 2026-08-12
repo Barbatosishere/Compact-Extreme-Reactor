@@ -1,5 +1,5 @@
 # Compact Extreme Reactor - neoforge.mods.toml
-# 本文件为模板，构建时由 generateModMetadata 任务展开 ${} 占位符
+# 本文件为模板，构建时由 generateModMetadata 任务展开占位符
 
 modLoader="javafml"
 loaderVersion="${loader_version_range}"
