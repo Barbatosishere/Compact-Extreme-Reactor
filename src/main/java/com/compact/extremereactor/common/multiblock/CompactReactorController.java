@@ -9,8 +9,12 @@ import it.zerono.mods.extremereactors.gamecontent.multiblock.reactor.MultiblockR
 import it.zerono.mods.extremereactors.gamecontent.multiblock.reactor.ReactorPartType;
 import it.zerono.mods.extremereactors.gamecontent.multiblock.reactor.variant.ReactorVariant;
 import it.zerono.mods.zerocore.lib.data.geometry.CuboidBoundingBox;
+import it.zerono.mods.zerocore.lib.data.nbt.ISyncableEntity;
 import it.zerono.mods.zerocore.lib.data.stack.OperationMode;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.HolderLookup;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.Tag;
 import net.minecraft.world.level.Level;
 
 import java.util.List;
@@ -95,6 +99,25 @@ public class CompactReactorController extends MultiblockReactor implements IComp
     /** 设置模拟控制棒插入比例（0-100），与真实控制棒语义一致。 */
     public void setControlRodInsertionRatio(int ratio) {
         this._controlRodInsertionRatio = (byte) Math.clamp(ratio, 0, 100);
+    }
+
+    // ------------------------------------------------------------------
+    // NBT 持久化：ER 存档不含自定义控制棒比例，必须覆写补充保存
+    // ------------------------------------------------------------------
+
+    @Override
+    public CompoundTag syncDataTo(CompoundTag tag, HolderLookup.Provider registries, ISyncableEntity.SyncReason reason) {
+        super.syncDataTo(tag, registries, reason);
+        tag.putByte("ControlRodInsertionRatio", this._controlRodInsertionRatio);
+        return tag;
+    }
+
+    @Override
+    public void syncDataFrom(CompoundTag tag, HolderLookup.Provider registries, ISyncableEntity.SyncReason reason) {
+        super.syncDataFrom(tag, registries, reason);
+        if (tag.contains("ControlRodInsertionRatio", Tag.TAG_BYTE)) {
+            this._controlRodInsertionRatio = tag.getByte("ControlRodInsertionRatio");
+        }
     }
 
     /** 向燃料容器注入燃料（如黄钇矿铤），返回实际注入量。 */

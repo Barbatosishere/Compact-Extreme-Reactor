@@ -191,7 +191,10 @@ public abstract class AbstractCompactMachineTileEntity extends BlockEntity {
         super.saveAdditional(tag, registries);
         CompoundTag controllerTag = new CompoundTag();
         saveControllerData(controllerTag, registries);
-        tag.put("controller", controllerTag);
+        // 控制器尚未初始化且无暂存数据时不写键，避免空数据覆盖旧存档
+        if (!controllerTag.isEmpty()) {
+            tag.put("controller", controllerTag);
+        }
     }
 
     @Override
@@ -206,6 +209,9 @@ public abstract class AbstractCompactMachineTileEntity extends BlockEntity {
     protected void saveControllerData(CompoundTag tag, HolderLookup.Provider registries) {
         if (this._controller != null) {
             this._controller.syncDataTo(tag, registries, ISyncableEntity.SyncReason.FullSync);
+        } else if (this._pendingControllerTag != null) {
+            // 控制器尚未初始化（加载后未 tick 就被保存）：原样写回暂存数据，防止丢失
+            tag.merge(this._pendingControllerTag);
         }
     }
 

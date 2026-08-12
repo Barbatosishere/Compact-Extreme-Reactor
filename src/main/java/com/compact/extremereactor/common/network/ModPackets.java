@@ -98,7 +98,11 @@ public final class ModPackets {
                 return;
             }
             switch (payload.action()) {
-                case ACTION_TOGGLE_ACTIVE -> controller.setMachineActive(!controller.isMachineActive());
+                case ACTION_TOGGLE_ACTIVE -> {
+                    controller.setMachineActive(!controller.isMachineActive());
+                    // 激活状态需要持久化，立即标记方块保存
+                    tile.setChanged();
+                }
                 case ACTION_VOID_WASTE -> {
                     if (controller instanceof CompactReactorController reactor) {
                         reactor.voidWaste();
