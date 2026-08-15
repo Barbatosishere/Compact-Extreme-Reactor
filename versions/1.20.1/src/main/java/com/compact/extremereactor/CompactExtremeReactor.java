@@ -7,6 +7,7 @@ import com.compact.extremereactor.common.tile.AbstractCompactMachineTileEntity;
 import net.minecraft.core.Direction;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.common.capabilities.Capability;
 import net.minecraftforge.common.capabilities.ForgeCapabilities;
 import net.minecraftforge.common.capabilities.ICapabilityProvider;
@@ -46,8 +47,9 @@ public final class CompactExtremeReactor {
         // 注册自定义网络数据包（GUI → 服务端指令）
         modEventBus.addListener(ModPackets::onCommonSetup);
 
-        // 注册方块能力：能量输出 + 流体进料出料（Forge 1.20 AttachCapabilitiesEvent）
-        modEventBus.addGenericListener(BlockEntity.class, CompactExtremeReactor::attachCapabilities);
+        // 注册方块能力：能量输出 + 流体进料出料（Forge 1.20 AttachCapabilitiesEvent）。
+        // 注意：该事件由游戏总线（MinecraftForge.EVENT_BUS）发布，注册到 mod 总线将永远收不到。
+        MinecraftForge.EVENT_BUS.addGenericListener(BlockEntity.class, CompactExtremeReactor::attachCapabilities);
 
         // 注册模组配置（47.1.x 分支以 addConfig 替代 registerConfig）
         modContainer.addConfig(new ModConfig(ModConfig.Type.COMMON, CompactConfig.SPEC, modContainer));
