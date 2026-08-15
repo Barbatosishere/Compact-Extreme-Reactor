@@ -5,6 +5,17 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0-beta4] - 2026-08-16
+
+### Added
+
+- **Forge 1.20.1 support**: the mod now builds and runs on both Forge 1.20.1 (47.1.106) and NeoForge 1.21.1 via a Stonecutter multi-version setup.
+- **Multi-version project structure**: sources moved to `versions/1.20.1` and `versions/1.21.1`, with per-version `gradle.properties` for loader / dependency versions; `stonecutter.gradle.kts` switches the active version.
+
+### Fixed
+
+- 1.20.1 API differences against the NeoForged Forge 47.1.x branch: `Capabilities` → `ForgeCapabilities`, `loadAdditional()` → `load()`, `registerConfig()` → `addConfig()`, `LazyOptional.ofNullable()` → `of()` with null check, removed `Level.getCapability(cap, pos, dir)`, removed `RegisterMenuScreensEvent` (now `MenuScreens.register` in `FMLClientSetupEvent`), `MenuType` two-arg constructor, `Registries.CREATIVE_MODE_TAB`, `Entity.level()` accessor.
+
 ## [1.0.0-beta3] - 2026-08-12
 
 ### Added

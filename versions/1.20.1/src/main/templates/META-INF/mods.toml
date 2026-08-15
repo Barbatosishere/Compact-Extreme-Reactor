@@ -1,0 +1,45 @@
+# Compact Extreme Reactor - mods.toml (Forge 1.20.1)
+# 本文件为模板，构建时由 generateModMetadata 任务展开占位符
+
+modLoader="javafml"
+loaderVersion="${loader_version_range}"
+
+# The license for you mod. This is mandatory metadata and allows for easier comprehension of your redistributive properties.
+license="${mod_license}"
+
+[[mods]]
+    modId="${mod_id}"
+    version="${mod_version}"
+    displayName="${mod_name}"
+    authors="${mod_authors}"
+    description="${mod_description}"
+
+[[dependencies.${mod_id}]]
+    modId="forge"
+    type="required"
+    versionRange="${forge_version_range}"
+    ordering="NONE"
+    side="BOTH"
+
+[[dependencies.${mod_id}]]
+    modId="minecraft"
+    type="required"
+    versionRange="${minecraft_version_range}"
+    ordering="NONE"
+    side="BOTH"
+
+# Extreme Reactors 运行时前置（压缩方块驱动其反应堆/涡轮机逻辑）
+[[dependencies.${mod_id}]]
+    modId="bigreactors"
+    type="required"
+    versionRange="[1.20.1-2.0.84,)"
+    ordering="AFTER"
+    side="BOTH"
+
+# ZeroCore2 运行时前置（多块控制器 API）
+[[dependencies.${mod_id}]]
+    modId="zerocore"
+    type="required"
+    versionRange="[1.20.1-2.1.45,)"
+    ordering="AFTER"
+    side="BOTH"

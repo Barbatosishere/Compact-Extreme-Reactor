@@ -1,123 +1,176 @@
+// ============================================================
+// Compact Extreme Reactor - Stonecutter 中央构建脚本
+// 当前版本属性由 Stonecutter 从 versions/<mc>/gradle.properties 注入：
+//   platform            : neoforge | legacyforge
+//   minecraft_version   : 1.21.1 | 1.20.1
+//   neo_version         : NeoForge 版本（1.21.1）
+//   neoforge_version    : Forge 版本（1.20.1，legacyforge 插件使用）
+//   java_version        : 21 | 17
+//   er_version/zerocore_version : 本地 libs 依赖版本
+// ============================================================
 plugins {
     id 'java-library'
     id 'maven-publish'
     id 'idea'
-    id 'net.neoforged.moddev' version '2.0.88'
+    // 两个 loader 插件都声明但不自动应用，运行时按 platform 分支 apply
+    id 'net.neoforged.moddev' version '2.0.140' apply false
+    id 'net.neoforged.moddev.legacyforge' version '2.0.140' apply false
 }
 
-version = mod_version
-group = mod_group_id
+def mcVersion = (findProperty('minecraft_version') ?: '1.21.1') as String
+def platform = (findProperty('platform') ?: 'neoforge') as String
+// Stonecutter 0.8：版本子项目 projectDir = versions/<mc>，因此所有根级路径必须经 rootProject 定位
+def versionedDir = rootProject.file("versions/${mcVersion}")
 
-repositories {
-    // 重要：moddev 插件会自动添加 maven.neoforged.net 官方仓库，但该域名
-    // （CDN77）在国内不可达，导致 jst-cli-bundle 等依赖下载失败。
-    // 这里先清空所有仓库，再手动替换为国内可达的镜像：
-    //   neoforged.forgecdn.net = maven.neoforged.net 的非官方同步镜像
-    repositories.clear()
-    mavenLocal()
-    mavenCentral()
-    maven {
-        name = 'NeoForged Mirror'
-        url = 'https://neoforged.forgecdn.net/releases'
-    }
-    maven {
-        name = 'NeoForged MojangMeta Mirror'
-        url = 'https://neoforged.forgecdn.net/mojang-meta'
-    }
-    maven {
-        name = 'Minecraft Libraries'
-        url = 'https://libraries.minecraft.net/'
-    }
-}
+version = findProperty('mod_version') ?: '1.0.0-beta3'
+group = findProperty('mod_group_id') ?: 'com.compact.extremereactor'
 
 base {
-    archivesName = mod_id
+    archivesName = findProperty('mod_id') ?: 'compactextremereactor'
 }
 
-java.toolchain.languageVersion = JavaLanguageVersion.of(21)
+java.toolchain.languageVersion = JavaLanguageVersion.of((findProperty('java_version') ?: '21') as int)
 
-neoForge {
-    // Specify the version of NeoForge to use.
-    version = project.neo_version
+repositories {
+    mavenLocal()
+    mavenCentral()
+}
 
-    // Default run configurations.
-    // These can be tweaked, removed, or duplicated as needed.
-    runs {
-        client {
-            client()
+// 版本特有源码与资源：Stonecutter 子项目 projectDir = versions/<mc>，
+// 默认源目录（src/main/java、src/main/resources）天然指向版本源码，无需显式声明
+// 数据生成输出（与资源合并进 jar）
+sourceSets.main.resources.srcDir 'src/generated/resources'
 
-            // Comma-separated list of namespaces to load gametests from. Empty = all namespaces.
-            systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+// 重配仓库：moddev/legacyforge apply 时会自动添加官方仓库（maven.neoforged.net、
+// libraries.minecraft.net）。官方源优先（代理可直连），不可达的域名用镜像兜底：
+//   bmclapi2.bangbang93.com = libraries.minecraft.net 镜像（该域名代理不可达，必须走镜像）
+//   neoforged.forgecdn.net = maven.neoforged.net / mojang-meta 的同步镜像
+// 注意：libraries.minecraft.net 即使开代理也无法访问，BMCLAPI 镜像不可移除
+def configureRepositories() {
+    repositories {
+        repositories.clear()
+        mavenLocal()
+        mavenCentral()
+        // ForgeCDN 镜像优先：maven.neoforged.net 直连 SSL 握手不稳定（代理未开时必失败），
+        // neoforged.forgecdn.net 是 neoforged.net 的同步镜像，国内可直连
+        maven {
+            name = 'NeoForged Mirror'
+            url = 'https://neoforged.forgecdn.net/releases'
         }
-
-        server {
-            server()
-            programArgument '--nogui'
-            systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+        maven {
+            name = 'NeoForged'
+            url = 'https://maven.neoforged.net/releases'
         }
-
-        // This run config launches GameTestServer and runs all registered gametests, then exits.
-        // By default, the server will crash when no gametests are provided.
-        // The gametest system is also enabled by default for other run configs under the /test command.
-        gameTestServer {
-            type = "gameTestServer"
-            systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+        maven {
+            name = 'MinecraftForge'
+            url = 'https://maven.minecraftforge.net/'
         }
-
-        data {
-            data()
-
-            // example of overriding the workingDirectory set in configureEach above, uncomment if you want to use it
-            // gameDirectory = project.file('run-data')
-
-            // Specify the modid for data generation, where to output the resulting resource, and where to look for existing resources.
-            programArguments.addAll '--mod', project.mod_id, '--all', '--output', file('src/generated/resources/').getAbsolutePath(), '--existing', file('src/main/resources/').getAbsolutePath()
+        maven {
+            name = 'BMCLAPI Minecraft Libraries'
+            url = 'https://bmclapi2.bangbang93.com/maven'
         }
-
-        // applies to all the run configs above
-        configureEach {
-            // Recommended logging data for a userdev environment
-            // The markers can be added/remove as needed separated by commas.
-            // "SCAN": For mods scan.
-            // "REGISTRIES": For firing of registry events.
-            // "REGISTRYDUMP": For getting the contents of all registries.
-            systemProperty 'forge.logging.markers', 'REGISTRIES'
-
-            // Recommended logging level for the console
-            // You can set various levels here.
-            // Please read: https://stackoverflow.com/questions/2031163/when-to-use-the-different-log-levels
-            logLevel = org.slf4j.event.Level.DEBUG
-        }
-    }
-
-    mods {
-        // define mod <-> source bindings
-        // these are used to tell the game which sources are for which mod
-        // mostly optional in a single mod project
-        // but multi mod projects should define one per mod
-        "${mod_id}" {
-            sourceSet(sourceSets.main)
+        maven {
+            name = 'NeoForged MojangMeta Mirror'
+            url = 'https://neoforged.forgecdn.net/mojang-meta'
         }
     }
 }
 
-// Include resources generated by data generators.
-sourceSets.main.resources { srcDir 'src/generated/resources' }
+// ============================================================
+// 平台分支：NeoForge 1.21.1 / Forge 1.20.1（moddev legacyforge）
+// ============================================================
+if (platform == 'neoforge') {
+    apply plugin: 'net.neoforged.moddev'
+    configureRepositories()
 
+    neoForge {
+        version = findProperty('neo_version')
+
+        runs {
+            client {
+                client()
+                systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+            }
+
+            server {
+                server()
+                programArgument '--nogui'
+                systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+            }
+
+            gameTestServer {
+                type = "gameTestServer"
+                systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+            }
+
+            data {
+                data()
+                programArguments.addAll '--mod', project.mod_id, '--all', '--output', file('src/generated/resources/').getAbsolutePath(), '--existing', file('src/main/resources/').getAbsolutePath()
+            }
+
+            configureEach {
+                systemProperty 'forge.logging.markers', 'REGISTRIES'
+                logLevel = org.slf4j.event.Level.DEBUG
+            }
+        }
+
+        mods {
+            "${mod_id}" {
+                sourceSet(sourceSets.main)
+            }
+        }
+    }
+} else {
+    apply plugin: 'net.neoforged.moddev.legacyforge'
+    configureRepositories()
+
+    legacyForge {
+        validateAccessTransformers = true
+
+        enable {
+            neoForgeVersion = findProperty('neoforge_version')
+        }
+
+        runs {
+            client {
+                client()
+            }
+            server {
+                server()
+            }
+            data {
+                data()
+            }
+        }
+
+        mods {
+            register(mod_id as String) {
+                sourceSet(sourceSets.main)
+            }
+        }
+    }
+}
+
+// ============================================================
 // 本地依赖：Extreme Reactors 与 ZeroCore 2 的发布版 jar
 // （maven.zerono.it 官方 Maven 仓库不可达，故从 Modrinth 下载放入 libs/ 目录）
+// ============================================================
 dependencies {
+    // rootProject.file：libs/ 位于仓库根目录，而子项目 projectDir 在 versions/<mc>/
     implementation files(
-            "libs/ExtremeReactors2-${er_version}.jar",
-            "libs/ZeroCore2-${zerocore_version}.jar"
+            rootProject.file("libs/ExtremeReactors2-${findProperty('er_version')}.jar"),
+            rootProject.file("libs/ZeroCore2-${findProperty('zerocore_version')}.jar")
     )
 }
 
 // 将本地依赖 mod 复制到 dev 运行目录的 mods 文件夹，确保开发环境中 ER/ZeroCore 被正常加载
+// 只复制当前版本对应的 jar，避免误带其他版本依赖
 tasks.register('copyLocalMods', Copy) {
-    from('libs') {
-        include '*.jar'
+    from(rootProject.file('libs')) {
+        include "ExtremeReactors2-${findProperty('er_version')}.jar"
+        include "ZeroCore2-${findProperty('zerocore_version')}.jar"
     }
+    // dev 运行目录位于子项目（versions/<mc>/run），故 run/mods 相对 projectDir
     into file('run/mods')
 }
 
@@ -125,33 +178,42 @@ tasks.matching { it.name in ['runClient', 'runServer', 'runGameTestServer'] }.co
     dependsOn 'copyLocalMods'
 }
 
-// This block of code expands all declared replace properties in the specified resource targets.
-// A missing property will result in an error. Properties are expanded using ${} Groovy notation.
+// ============================================================
+// mods.toml 元数据生成：从当前版本目录的模板展开占位符
+// ============================================================
 var generateModMetadata = tasks.register("generateModMetadata", ProcessResources) {
-    var replaceProperties = [minecraft_version      : minecraft_version,
-                             minecraft_version_range: minecraft_version_range,
-                             neo_version            : neo_version,
-                             neo_version_range      : neo_version_range,
-                             loader_version_range   : loader_version_range,
-                             mod_id                 : mod_id,
-                             mod_name               : mod_name,
-                             mod_license            : mod_license,
-                             mod_version            : mod_version,
-                             mod_authors            : mod_authors,
-                             mod_description        : mod_description]
+    // 属性可能在某平台不存在（如 forge_version_range 仅 1.20.1 用），置空避免校验失败
+    var replaceProperties = [minecraft_version      : findProperty('minecraft_version'),
+                             minecraft_version_range: findProperty('minecraft_version_range'),
+                             neo_version            : findProperty('neo_version'),
+                             neo_version_range      : findProperty('neo_version_range'),
+                             loader_version_range   : findProperty('loader_version_range'),
+                             forge_version_range    : findProperty('forge_version_range') ?: '',
+                             mod_id                 : findProperty('mod_id'),
+                             mod_name               : findProperty('mod_name'),
+                             mod_license            : findProperty('mod_license'),
+                             mod_version            : findProperty('mod_version'),
+                             mod_authors            : findProperty('mod_authors'),
+                             mod_description        : findProperty('mod_description')]
+    // Gradle 9 不允许属性值为 null：剔除当前平台不存在的属性（如 1.20.1 无 neo_version）
+    replaceProperties = replaceProperties.findAll { it.value != null }
     inputs.properties replaceProperties
     expand replaceProperties
-    from "src/main/templates"
+    from "${versionedDir}/src/main/templates"
     into "build/generated/sources/modMetadata"
 }
 
-// Include the output of "generateModMetadata" as an input directory for the build
-// this works with both building through Gradle and the IDE.
+// 将生成的 mods.toml 并入资源，并在 IDE 同步时自动运行
 sourceSets.main.resources.srcDir generateModMetadata
-// To avoid having to run "generateModMetadata" manually, make it run on every project reload
-neoForge.ideSyncTask generateModMetadata
+if (platform == 'neoforge') {
+    neoForge.ideSyncTask generateModMetadata
+} else {
+    legacyForge.ideSyncTask generateModMetadata
+}
 
-// Example configuration to allow publishing using the maven-publish plugin
+// ============================================================
+// 发布配置
+// ============================================================
 publishing {
     publications {
         register('mavenJava', MavenPublication) {
@@ -165,7 +227,6 @@ publishing {
     }
 }
 
-// IDEA no longer automatically downloads sources/javadoc jars for dependencies, so we need to explicitly enable the behavior.
 idea {
     module {
         downloadSources = true

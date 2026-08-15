@@ -1,0 +1,20 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "CCC",
+    "CRC",
+    "CCC"
+  ],
+  "key": {
+    "C": {
+      "item": "bigreactors:basic_reactorcasing"
+    },
+    "R": {
+      "item": "bigreactors:basic_reactorcontroller"
+    }
+  },
+  "result": {
+    "id": "compactextremereactor:compact_reactor",
+    "count": 1
+  }
+}

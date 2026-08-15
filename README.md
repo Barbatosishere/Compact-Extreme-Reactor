@@ -2,7 +2,7 @@
 
 > **English** | [中文](README_zh_CN.md)
 
-Compress Extreme Reactors' large multiblock machines (Reactor / Turbine) into **single compact blocks** — a NeoForge 1.21.1 mod.
+Compress Extreme Reactors' large multiblock machines (Reactor / Turbine) into **single compact blocks** — available for **Forge 1.20.1** and **NeoForge 1.21.1** (multi-version via [Stonecutter](https://stonecutter.kikugie.dev/)).
 
 Place one block and get an entire functional multiblock machine, fully reusing ER's reactor / turbine simulation logic without building any real structure.
 
@@ -32,9 +32,20 @@ Single-block TileEntity
 - Every tick `updateMultiblockEntity()` drives the full ReactorLogic / TurbineLogic simulation (radiation, fuel burn, heat, power output, fluid cycle);
 - Energy is exposed via `IEnergyStorage` and actively pushed to the 6 neighboring blocks each tick;
 - Fluids are exposed via `IFluidHandler`: reactor = water in / steam out; turbine = steam in / water out;
-- Control commands (control rod, toggle, void waste) go client→server via NeoForge 1.21 payload networking.
+- Control commands (control rod, toggle, void waste) go client→server via the platform's networking (NeoForge payloads on 1.21.1, Forge `SimpleChannel` on 1.20.1).
 
 ## 📦 Dependencies
+
+### Forge 1.20.1
+
+| Dependency | Version | Notes |
+|---|---|---|
+| Minecraft | 1.20.1 | Required |
+| Forge | 47.1.106 | Required (dev) |
+| Extreme Reactors | 1.20.1-2.0.84 | Required (runtime) |
+| ZeroCore2 | 1.20.1-2.1.45 | Required (multiblock API) |
+
+### NeoForge 1.21.1
 
 | Dependency | Version | Notes |
 |---|---|---|
@@ -47,14 +58,20 @@ Single-block TileEntity
 
 ## 🔨 Building
 
+The project uses Stonecutter to share a single build script across both versions. The active version is set in `stonecutter.gradle.kts`; per-version loader / dependency versions live in `versions/<mc>/gradle.properties`.
+
 ```powershell
-# JDK 21 + Gradle 8.8 (use the bundled gradlew)
+# JDK 17 (1.20.1) / JDK 21 (1.21.1) — the toolchain is selected automatically
+# Build a specific version explicitly:
+.\gradlew.bat :1.20.1:build
+.\gradlew.bat :1.21.1:build
+# Or build the active version:
 .\gradlew.bat build
 ```
 
-The artifact is at `build/libs/compactextremereactor-1.0.0.jar` — drop it into your `mods/` folder.
+Artifacts are at `versions/<mc>/build/libs/compactextremereactor-1.0.0-beta4.jar` — drop the one for your loader into your `mods/` folder.
 
-> 💡 If dependency downloads fail on a flaky network, IPv4-first is already enabled in `gradle.properties` (`-Djava.net.preferIPv4Stack=true`).
+> 💡 If dependency downloads fail on a flaky network, IPv4-first is already enabled in `gradle.properties` (`-Djava.net.preferIPv4Stack=true`) and a reachable mirror (`neoforged.forgecdn.net`, BMCLAPI) is configured as fallback in `build.gradle`.
 
 ## 🎮 Usage
 
@@ -78,24 +95,29 @@ The artifact is at `build/libs/compactextremereactor-1.0.0.jar` — drop it into
 ## 📁 Project layout
 
 ```
-src/main/java/com/compact/extremereactor/
-├── CompactExtremeReactor.java      # Main class: capability/payload registration, config
-├── client/
-│   ├── ClientHandler.java          # Client screen registration
-│   └── screen/                     # Reactor / Turbine GUIs
-├── common/
-│   ├── Content.java                # Block/Item/BE/Menu registry
-│   ├── block/                      # Block classes (GUI open, BE binding)
-│   ├── capability/                 # Energy / fluid capability wrappers
-│   ├── config/CompactConfig.java   # Simulation parameters
-│   ├── menu/                       # Containers (data-slot sync + auto fuel injection)
-│   ├── multiblock/                 # Simulated controllers (core: ER controller subclasses)
-│   ├── network/ModPackets.java     # C2S control payloads
-│   └── tile/                       # TileEntities (controller lifecycle/NBT/capabilities)
-src/main/resources/
-├── assets/                         # Models / lang (en_us, zh_cn) / blockstates
-├── data/                           # Loot tables / recipes
-└── META-INF/mods.toml              # Mod metadata & dependency declarations
+versions/<mc>/                 # per-version sources (1.20.1, 1.21.1)
+├── gradle.properties          # loader / dependency versions for this MC
+└── src/main/
+    ├── java/com/compact/extremereactor/
+    │   ├── CompactExtremeReactor.java  # Main class: capability/payload registration, config
+    │   ├── client/
+    │   │   ├── ClientHandler.java      # Client screen registration
+    │   │   └── screen/                 # Reactor / Turbine GUIs
+    │   ├── common/
+    │   │   ├── Content.java            # Block/Item/BE/Menu registry
+    │   │   ├── block/                  # Block classes (GUI open, BE binding)
+    │   │   ├── capability/             # Energy / fluid capability wrappers
+    │   │   ├── config/CompactConfig.java # Simulation parameters
+    │   │   ├── menu/                   # Containers (data-slot sync + auto fuel injection)
+    │   │   ├── multiblock/             # Simulated controllers (core: ER controller subclasses)
+    │   │   ├── network/ModPackets.java # C2S control payloads
+    │   │   └── tile/                   # TileEntities (controller lifecycle/NBT/capabilities)
+    │   └── resources/
+    │       ├── assets/                 # Models / lang (en_us, zh_cn) / blockstates
+    │       ├── data/                   # Loot tables / recipes
+    │       └── templates/META-INF/mods.toml # Mod metadata template (expanded at build)
+├── build.gradle               # shared build script (repo root)
+└── stonecutter.gradle.kts     # active version switch
 ```
 
 ## 🙏 Credits

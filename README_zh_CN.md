@@ -2,7 +2,7 @@
 
 > [English](README.md) | **中文**
 
-将 [Extreme Reactors](https://github.com/ZeroNoRyouki/ExtremeReactors2) 的大型多方块机器（反应堆 / 涡轮机）**压缩为单个紧凑方块**的 NeoForge 1.21.1 模组。
+将 [Extreme Reactors](https://github.com/ZeroNoRyouki/ExtremeReactors2) 的大型多方块机器（反应堆 / 涡轮机）**压缩为单个紧凑方块**的模组，支持 **Forge 1.20.1** 与 **NeoForge 1.21.1** 双版本（基于 [Stonecutter](https://stonecutter.kikugie.dev/) 多版本构建）。
 
 放置一个方块，即可获得一整套完整的多方块机器 —— 不需要搭建真实结构，内部完整复用 ER 的反应堆 / 涡轮机模拟逻辑。
 
@@ -32,9 +32,20 @@
 - 每个游戏刻调用 `updateMultiblockEntity()` 驱动完整的 ReactorLogic / TurbineLogic 模拟（辐射、燃料消耗、热量、发电、流体循环）；
 - 能量通过 `IEnergyStorage` 能力暴露，并每 tick 主动向 6 个相邻方块推送（模拟 PowerTap）；
 - 流体通过 `IFluidHandler` 能力暴露：反应堆 = 水进/蒸汽出，涡轮机 = 蒸汽进/水出；
-- 控制指令（控制棒调节、开关、清除废料）通过 NeoForge 1.21 payload 网络（C2S）发送到服务端。
+- 控制指令（控制棒调节、开关、清除废料）通过对应平台的网络系统发送到服务端（1.21.1 用 NeoForge payload，1.20.1 用 Forge `SimpleChannel`）。
 
 ## 📦 前置依赖
+
+### Forge 1.20.1
+
+| 依赖 | 版本 | 说明 |
+|---|---|---|
+| Minecraft | 1.20.1 | 必需 |
+| Forge | 47.1.106 | 必需（开发版本） |
+| Extreme Reactors | 1.20.1-2.0.84 | 必需（运行时前置） |
+| ZeroCore2 | 1.20.1-2.1.45 | 必需（多块控制器 API） |
+
+### NeoForge 1.21.1
 
 | 依赖 | 版本 | 说明 |
 |---|---|---|
@@ -47,14 +58,20 @@
 
 ## 🔨 构建
 
+项目使用 Stonecutter 在两个版本间共享同一份构建脚本。当前激活版本由 `stonecutter.gradle.kts` 决定；各版本的 loader / 依赖版本配置在 `versions/<mc>/gradle.properties`。
+
 ```powershell
-# JDK 21 + Gradle 8.8（使用项目自带的 gradlew）
+# JDK 17（1.20.1）/ JDK 21（1.21.1）——工具链自动选择
+# 显式构建指定版本：
+.\gradlew.bat :1.20.1:build
+.\gradlew.bat :1.21.1:build
+# 或构建当前激活版本：
 .\gradlew.bat build
 ```
 
-构建产物位于 `build/libs/compactextremereactor-1.0.0.jar`，放入 `mods/` 目录即可。
+构建产物位于 `versions/<mc>/build/libs/compactextremereactor-1.0.0-beta4.jar`，按对应 loader 放入 `mods/` 目录即可。
 
-> 💡 如果网络环境不佳导致依赖下载失败，`gradle.properties` 已配置 IPv4 优先（`-Djava.net.preferIPv4Stack=true`）。
+> 💡 如果网络环境不佳导致依赖下载失败，`gradle.properties` 已配置 IPv4 优先（`-Djava.net.preferIPv4Stack=true`），且 `build.gradle` 内置了可达镜像（`neoforged.forgecdn.net`、BMCLAPI）作为兜底。
 
 ## 🎮 使用说明
 
@@ -78,24 +95,29 @@
 ## 📁 项目结构
 
 ```
-src/main/java/com/compact/extremereactor/
-├── CompactExtremeReactor.java      # 主类：能力注册、payload 注册、配置
-├── client/
-│   ├── ClientHandler.java          # 客户端 GUI 屏幕注册
-│   └── screen/                     # 反应堆 / 涡轮机 GUI
-├── common/
-│   ├── Content.java                # 方块/物品/方块实体/菜单注册表
-│   ├── block/                      # 方块类（GUI 打开、TileEntity 绑定）
-│   ├── capability/                 # 能量/流体能力包装
-│   ├── config/CompactConfig.java   # 模拟参数配置
-│   ├── menu/                       # 容器（数据槽同步 + 燃料自动注入）
-│   ├── multiblock/                 # 模拟控制器（核心：ER 控制器子类）
-│   ├── network/ModPackets.java     # C2S 控制指令数据包
-│   └── tile/                       # TileEntity（控制器生命周期/NBT/能力）
-src/main/resources/
-├── assets/                         # 模型/语言（en_us/zh_cn）/方块状态
-├── data/                           # 战利品表/合成配方
-└── META-INF/mods.toml              # 模组元数据与依赖声明
+versions/<mc>/                 # 各版本源码（1.20.1、1.21.1）
+├── gradle.properties          # 该 MC 版本的 loader / 依赖版本
+└── src/main/
+    ├── java/com/compact/extremereactor/
+    │   ├── CompactExtremeReactor.java  # 主类：能力注册、payload 注册、配置
+    │   ├── client/
+    │   │   ├── ClientHandler.java      # 客户端 GUI 屏幕注册
+    │   │   └── screen/                 # 反应堆 / 涡轮机 GUI
+    │   ├── common/
+    │   │   ├── Content.java            # 方块/物品/方块实体/菜单注册表
+    │   │   ├── block/                  # 方块类（GUI 打开、TileEntity 绑定）
+    │   │   ├── capability/             # 能量/流体能力包装
+    │   │   ├── config/CompactConfig.java # 模拟参数配置
+    │   │   ├── menu/                   # 容器（数据槽同步 + 燃料自动注入）
+    │   │   ├── multiblock/             # 模拟控制器（核心：ER 控制器子类）
+    │   │   ├── network/ModPackets.java # C2S 控制指令数据包
+    │   │   └── tile/                   # TileEntity（控制器生命周期/NBT/能力）
+    │   └── resources/
+    │       ├── assets/                 # 模型/语言（en_us/zh_cn）/方块状态
+    │       ├── data/                   # 战利品表/合成配方
+    │       └── templates/META-INF/mods.toml # 模组元数据模板（构建时展开）
+├── build.gradle               # 共享构建脚本（仓库根目录）
+└── stonecutter.gradle.kts     # 激活版本切换
 ```
 
 ## 🙏 致谢
