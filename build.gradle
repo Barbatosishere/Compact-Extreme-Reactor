@@ -19,14 +19,30 @@ plugins {
 
 def mcVersion = (findProperty('minecraft_version') ?: '1.21.1') as String
 def platform = (findProperty('platform') ?: 'neoforge') as String
+// jar 文件名中的加载器标签（1.20.1 分支为 Forge，1.21.1 分支为 NeoForge）
+def loaderLabel = platform == 'neoforge' ? 'NeoForge' : 'Forge'
 // Stonecutter 0.8：版本子项目 projectDir = versions/<mc>，因此所有根级路径必须经 rootProject 定位
 def versionedDir = rootProject.file("versions/${mcVersion}")
 
-version = findProperty('mod_version') ?: '1.0.0-beta3'
+version = findProperty('mod_version') ?: '1.0.0-beta4'
 group = findProperty('mod_group_id') ?: 'com.compact.extremereactor'
 
 base {
     archivesName = findProperty('mod_id') ?: 'compactextremereactor'
+}
+
+// 统一产物命名：<modid>-<version>-<Loader>-<MC版本>.jar
+// 例：compactextremereactor-1.0.0-beta4-Forge-1.20.1.jar / -NeoForge-1.21.1.jar
+def versionedJarName = "${findProperty('mod_id') ?: 'compactextremereactor'}-" +
+        "${findProperty('mod_version') ?: '1.0.0-beta4'}-" +
+        "${loaderLabel}-${mcVersion}.jar"
+tasks.named('jar', Jar) {
+    archiveFileName.set(versionedJarName)
+}
+// legacyforge 平台的最终产物是 reobfJar（重混淆 jar），同样采用统一命名。
+// reobfJar 由 legacyforge 插件延迟创建，必须用惰性匹配配置（matching + configureEach）
+tasks.matching { it.name == 'reobfJar' }.configureEach {
+    archiveFileName.set(versionedJarName)
 }
 
 java.toolchain.languageVersion = JavaLanguageVersion.of((findProperty('java_version') ?: '21') as int)

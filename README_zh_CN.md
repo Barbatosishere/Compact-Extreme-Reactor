@@ -69,7 +69,7 @@
 .\gradlew.bat build
 ```
 
-构建产物位于 `versions/<mc>/build/libs/compactextremereactor-1.0.0-beta4.jar`，按对应 loader 放入 `mods/` 目录即可。
+构建产物位于 `versions/<mc>/build/libs/compactextremereactor-<版本>-<Loader>-<MC版本>.jar`（如 `compactextremereactor-1.0.0-beta4-Forge-1.20.1.jar` / `compactextremereactor-1.0.0-beta4-NeoForge-1.21.1.jar`），按对应 loader 放入 `mods/` 目录即可。
 
 > 💡 如果网络环境不佳导致依赖下载失败，`gradle.properties` 已配置 IPv4 优先（`-Djava.net.preferIPv4Stack=true`），且 `build.gradle` 内置了可达镜像（`neoforged.forgecdn.net`、BMCLAPI）作为兜底。
 

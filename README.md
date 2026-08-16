@@ -69,7 +69,7 @@ The project uses Stonecutter to share a single build script across both versions
 .\gradlew.bat build
 ```
 
-Artifacts are at `versions/<mc>/build/libs/compactextremereactor-1.0.0-beta4.jar` — drop the one for your loader into your `mods/` folder.
+Artifacts are at `versions/<mc>/build/libs/compactextremereactor-<version>-<Loader>-<mc>.jar` (e.g. `compactextremereactor-1.0.0-beta4-Forge-1.20.1.jar` / `compactextremereactor-1.0.0-beta4-NeoForge-1.21.1.jar`) — drop the one for your loader into your `mods/` folder.
 
 > 💡 If dependency downloads fail on a flaky network, IPv4-first is already enabled in `gradle.properties` (`-Djava.net.preferIPv4Stack=true`) and a reachable mirror (`neoforged.forgecdn.net`, BMCLAPI) is configured as fallback in `build.gradle`.
 
