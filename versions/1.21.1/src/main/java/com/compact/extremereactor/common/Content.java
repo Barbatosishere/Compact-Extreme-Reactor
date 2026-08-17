@@ -40,7 +40,7 @@ public final class Content {
     public static final DeferredRegister<MenuType<?>> MENU_TYPES =
             DeferredRegister.create(Registries.MENU, CompactExtremeReactor.MODID);
 
-    // 压缩反应堆方块：内部模拟整个反应堆多方块
+    // 压缩极限反应堆方块：内部模拟整个反应堆多方块
     public static final DeferredBlock<CompactReactorBlock> COMPACT_REACTOR = BLOCKS.register("compact_reactor",
             () -> new CompactReactorBlock(BlockBehaviour.Properties.of().strength(5.0F, 30.0F)));
 

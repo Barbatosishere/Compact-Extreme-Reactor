@@ -97,22 +97,27 @@ public class CompactTurbineMenu extends AbstractContainerMenu {
 
         @Override
         public int get(int index) {
-            final ICompactController controller = this._tile.getController();
-            if (controller == null) {
-                return 0;
-            }
+            // 方块坐标与就绪标记不依赖控制器：保证 GUI 按钮始终可用
             return switch (index) {
                 case DATA_POS_READY -> 1;
                 case DATA_POS_X -> this._tile.getBlockPos().getX();
                 case DATA_POS_Y -> this._tile.getBlockPos().getY();
                 case DATA_POS_Z -> this._tile.getBlockPos().getZ();
-                case DATA_ENERGY -> (int) controller.getEnergyStored(EnergySystem.ForgeEnergy).longValue();
-                case DATA_ENERGY_CAPACITY -> (int) controller.getCapacity(EnergySystem.ForgeEnergy).longValue();
-                case DATA_STEAM -> controller.getFluidContainer().getGasAmount();
-                case DATA_WATER -> controller.getFluidContainer().getLiquidAmount();
-                case DATA_FLUID_CAPACITY -> controller.getFluidContainer().getCapacity();
-                case DATA_POWER -> (int) controller.getEnergyGeneratedLastTick();
-                default -> 0;
+                default -> {
+                    final ICompactController controller = this._tile.getController();
+                    if (controller == null) {
+                        yield 0;
+                    }
+                    yield switch (index) {
+                        case DATA_ENERGY -> (int) controller.getEnergyStored(EnergySystem.ForgeEnergy).longValue();
+                        case DATA_ENERGY_CAPACITY -> (int) controller.getCapacity(EnergySystem.ForgeEnergy).longValue();
+                        case DATA_STEAM -> controller.getFluidContainer().getGasAmount();
+                        case DATA_WATER -> controller.getFluidContainer().getLiquidAmount();
+                        case DATA_FLUID_CAPACITY -> controller.getFluidContainer().getCapacity();
+                        case DATA_POWER -> (int) controller.getEnergyGeneratedLastTick();
+                        default -> 0;
+                    };
+                }
             };
         }
 

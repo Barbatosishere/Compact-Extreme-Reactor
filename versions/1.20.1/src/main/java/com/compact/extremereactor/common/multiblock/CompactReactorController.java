@@ -28,7 +28,7 @@ import java.util.function.BiFunction;
 import java.util.function.Function;
 
 /**
- * 压缩反应堆控制器：在单个方块内完整模拟一个 Extreme Reactors 反应堆多方块。
+ * 压缩极限反应堆控制器：在单个方块内完整模拟一个 Extreme Reactors 反应堆多方块。
  *
  * 实现原理（重要）：
  * 1. 直接继承 ER 的 {@link MultiblockReactor}，复用其全部反应堆逻辑（辐射、
@@ -117,7 +117,7 @@ public class CompactReactorController extends MultiblockReactor implements IComp
     // ------------------------------------------------------------------
 
     /**
-     * 压缩反应堆恒为 Active 模式：真实反应堆按是否挂载 FluidPort 部件决定模式，
+     * 压缩极限反应堆恒为 Active 模式：真实反应堆按是否挂载 FluidPort 部件决定模式，
      * 压缩机无部件会被判为 Passive，导致水/蒸汽能力完全不工作（容量 0、处理器为空）。
      * 固定为 Active 后：流体容器按模拟体积计算容量、水进/蒸汽出正常、热量原生转化为蒸汽。
      */

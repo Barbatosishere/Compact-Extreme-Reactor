@@ -18,7 +18,7 @@ import net.minecraft.world.item.ItemStack;
 import org.jetbrains.annotations.Nullable;
 
 /**
- * 压缩反应堆容器：1 个燃料输入槽 + 同步数据（能量/燃料/废物/控制棒）。
+ * 压缩极限反应堆容器：1 个燃料输入槽 + 同步数据（能量/燃料/废物/控制棒）。
  *
  * 数据槽布局（客户端通过 addDataSlots 同步，服务端实时从控制器读取）：
  *   0: posReady 标记（同步完成后为 1）  1-3: 方块坐标 X/Y/Z（供客户端发送指令包）
@@ -170,22 +170,27 @@ public class CompactReactorMenu extends AbstractContainerMenu {
 
         @Override
         public int get(int index) {
-            final ICompactController controller = this._tile.getController();
-            if (controller == null) {
-                return 0;
-            }
+            // 方块坐标与就绪标记不依赖控制器：保证 GUI 按钮始终可用
             return switch (index) {
                 case DATA_POS_READY -> 1;
                 case DATA_POS_X -> this._tile.getBlockPos().getX();
                 case DATA_POS_Y -> this._tile.getBlockPos().getY();
                 case DATA_POS_Z -> this._tile.getBlockPos().getZ();
-                case DATA_ENERGY -> (int) controller.getEnergyStored(EnergySystem.ForgeEnergy).longValue();
-                case DATA_ENERGY_CAPACITY -> (int) controller.getCapacity(EnergySystem.ForgeEnergy).longValue();
-                case DATA_FUEL -> controller.getFuelAmount();
-                case DATA_WASTE -> controller.getWasteAmount();
-                case DATA_FUEL_CAPACITY -> controller.getFuelCapacity();
-                case DATA_CONTROL_ROD -> this._tile.getControlRodInsertionRatio();
-                default -> 0;
+                default -> {
+                    final ICompactController controller = this._tile.getController();
+                    if (controller == null) {
+                        yield 0;
+                    }
+                    yield switch (index) {
+                        case DATA_ENERGY -> (int) controller.getEnergyStored(EnergySystem.ForgeEnergy).longValue();
+                        case DATA_ENERGY_CAPACITY -> (int) controller.getCapacity(EnergySystem.ForgeEnergy).longValue();
+                        case DATA_FUEL -> controller.getFuelAmount();
+                        case DATA_WASTE -> controller.getWasteAmount();
+                        case DATA_FUEL_CAPACITY -> controller.getFuelCapacity();
+                        case DATA_CONTROL_ROD -> this._tile.getControlRodInsertionRatio();
+                        default -> 0;
+                    };
+                }
             };
         }
 

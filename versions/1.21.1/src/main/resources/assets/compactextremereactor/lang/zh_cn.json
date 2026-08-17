@@ -1,6 +1,6 @@
 {
   "itemGroup.compactextremereactor": "压缩极限反应堆",
-  "block.compactextremereactor.compact_reactor": "压缩反应堆",
+  "block.compactextremereactor.compact_reactor": "压缩极限反应堆",
   "block.compactextremereactor.compact_turbine": "压缩涡轮机",
   "tooltip.compactextremereactor.compact_reactor": "将整个极限反应堆多方块结构压缩为单个方块。",
   "tooltip.compactextremereactor.compact_turbine": "将整个极限反应堆涡轮机多方块结构压缩为单个方块。",

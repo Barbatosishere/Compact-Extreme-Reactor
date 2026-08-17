@@ -105,6 +105,28 @@ public abstract class AbstractCompactMachineTileEntity extends BlockEntity {
         this._energyStorage = new CompactEnergyStorage(this._controller);
         this._fluidHandler = this.createFluidHandler(this._controller);
         this._initialized = true;
+        // 初始化完成后立即标记脏数据：新机器的激活状态/容量/初始控制器数据
+        // 必须及时进入存档，而不是等到每 20 tick 或首个 GUI 操作才保存
+        this.setChanged();
+    }
+
+    @Override
+    public void onLoad() {
+        super.onLoad();
+        // 方块实体加入世界时即初始化控制器，新建机器不必等待首个 serverTick
+        if (this.level != null && !this.level.isClientSide) {
+            this.initController();
+        }
+    }
+
+    @Override
+    public void setLevel(net.minecraft.world.level.Level level) {
+        super.setLevel(level);
+        // setLevel 在方块实体挂载到世界时必定调用（含 setblock/玩家放置/加载存档），
+        // 比 onLoad 更可靠：确保控制器在首个 tick 前就已初始化，GUI 开关/调节立即可用
+        if (this.level != null && !this.level.isClientSide) {
+            this.initController();
+        }
     }
 
     /** 创建流体能力包装（子类实现：反应堆=水进/蒸汽出，涡轮机=蒸汽进/水出）。 */

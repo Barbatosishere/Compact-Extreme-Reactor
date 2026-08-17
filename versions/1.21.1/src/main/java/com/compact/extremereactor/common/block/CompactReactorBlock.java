@@ -13,7 +13,7 @@ import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.SimpleMenuProvider;
 
 /**
- * 压缩反应堆方块：持有 {@link CompactReactorTileEntity}，右键打开反应堆 GUI。
+ * 压缩极限反应堆方块：持有 {@link CompactReactorTileEntity}，右键打开反应堆 GUI。
  */
 public class CompactReactorBlock extends CompactMachineBlock {
 

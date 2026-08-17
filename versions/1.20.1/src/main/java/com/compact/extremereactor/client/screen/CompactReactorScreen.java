@@ -11,7 +11,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.player.Inventory;
 
 /**
- * 压缩反应堆 GUI：显示能量/燃料/废物/控制棒状态，并提供控制棒调节、
+ * 压缩极限反应堆 GUI：显示能量/燃料/废物/控制棒状态，并提供控制棒调节、
  * 机器开关与清除废料按钮。
  *
  * 背景复用 ER 的 basic_background 纹理（256x256，取左上 176x166 区域）。

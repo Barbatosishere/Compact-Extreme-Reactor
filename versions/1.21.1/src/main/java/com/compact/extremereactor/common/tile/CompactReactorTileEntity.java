@@ -12,7 +12,7 @@ import net.neoforged.neoforge.fluids.capability.IFluidHandler;
 import net.neoforged.neoforge.fluids.capability.templates.EmptyFluidHandler;
 
 /**
- * 压缩反应堆 TileEntity：持有 {@link CompactReactorController} 并驱动其模拟。
+ * 压缩极限反应堆 TileEntity：持有 {@link CompactReactorController} 并驱动其模拟。
  *
  * 一个方块 = 一个完整的反应堆多方块：
  *   - 燃料棒/控制棒/功率接口数量与内部尺寸由 {@link CompactConfig} 决定；
