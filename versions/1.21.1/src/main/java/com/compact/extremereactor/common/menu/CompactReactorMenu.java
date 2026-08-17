@@ -65,8 +65,13 @@ public class CompactReactorMenu extends AbstractContainerMenu {
         this._fuelSlot = new SimpleContainer(1);
         this._data = data;
 
-        // 燃料输入槽（等效反应堆固体访问端口）
-        this.addSlot(new Slot(this._fuelSlot, 0, 8, 35));
+        // 燃料输入槽（等效反应堆固体访问端口）：仅接受可映射为 ER 燃料的物品
+        this.addSlot(new Slot(this._fuelSlot, 0, 8, 35) {
+            @Override
+            public boolean mayPlace(ItemStack stack) {
+                return ReactantMappingsRegistry.getFromSolid(stack).isPresent();
+            }
+        });
 
         // 玩家背包（3 行 x 9 列）
         for (int row = 0; row < 3; row++) {
@@ -98,7 +103,7 @@ public class CompactReactorMenu extends AbstractContainerMenu {
                 // 一个（或几个）物品对应 mapping 的燃料量；注入成功才消耗物品
                 final int productAmount = mapping.getProductAmount();
                 final int inserted = reactor.insertFuel(mapping.getProduct(), productAmount, OperationMode.Execute);
-                if (inserted >= productAmount) {
+                if (inserted >= productAmount && stack.getCount() >= mapping.getSourceAmount()) {
                     stack.shrink(mapping.getSourceAmount());
                     this._tile.setChanged();
                 }

@@ -33,9 +33,9 @@ import java.util.function.Function;
  */
 public class CompactTurbineController extends MultiblockTurbine implements ICompactController {
 
-    /** 模拟线圈使用的真实线圈材料（ER 内置注册的 `forge:storage_blocks/gold`）。 */
+    /** 模拟线圈使用的真实线圈材料（ER2 1.21.x 以 `c:` 惯例命名空间注册 `c:storage_blocks/gold`）。 */
     private static final TagKey<Block> COIL_TAG = TagKey.create(Registries.BLOCK,
-            net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("forge", "storage_blocks/gold"));
+            net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("c", "storage_blocks/gold"));
 
     private final BlockPos _anchor;
     private final int _sizeX;
@@ -129,6 +129,13 @@ public class CompactTurbineController extends MultiblockTurbine implements IComp
                                            Function<BlockPos, BlockPos> maxRemapper) {
         return mapper.apply(minRemapper.apply(this.getBoundingBox().getMin()),
                 maxRemapper.apply(this.getBoundingBox().getMax()));
+    }
+
+    @Override
+    public int getPartsCount() {
+        // 能量缓冲容量 = 每部件容量 × 部件总数 × 倍率（onMachineAssembled 使用无参版本），
+        // 基类返回已连接部件数（恒 0），必须覆写为模拟结构方块数
+        return this._sizeX * this._sizeY * this._sizeZ;
     }
 
     @Override

@@ -1,13 +1,17 @@
 package com.compact.extremereactor.common.multiblock;
 
+import it.zerono.mods.extremereactors.api.reactor.IHeatEntity;
 import it.zerono.mods.extremereactors.api.reactor.Reactant;
 import it.zerono.mods.extremereactors.api.reactor.radiation.IRadiationModerator;
+import it.zerono.mods.extremereactors.config.Config;
 import it.zerono.mods.extremereactors.gamecontent.multiblock.reactor.FuelContainer;
 import it.zerono.mods.extremereactors.gamecontent.multiblock.reactor.IIrradiationSource;
 import it.zerono.mods.extremereactors.gamecontent.multiblock.reactor.IReactorPartType;
 import it.zerono.mods.extremereactors.gamecontent.multiblock.reactor.MultiblockReactor;
+import it.zerono.mods.extremereactors.gamecontent.multiblock.reactor.OperationalMode;
 import it.zerono.mods.extremereactors.gamecontent.multiblock.reactor.ReactorPartType;
 import it.zerono.mods.extremereactors.gamecontent.multiblock.reactor.variant.ReactorVariant;
+import it.zerono.mods.zerocore.lib.data.WideAmount;
 import it.zerono.mods.zerocore.lib.data.geometry.CuboidBoundingBox;
 import it.zerono.mods.zerocore.lib.data.nbt.ISyncableEntity;
 import it.zerono.mods.zerocore.lib.data.stack.OperationMode;
@@ -50,6 +54,10 @@ public class CompactReactorController extends MultiblockReactor implements IComp
     private static final IRadiationModerator NOOP_MODERATOR = (data, packet) -> {
     };
 
+    /** ReactorLogic 被动分支常量（被动冷却的传热/输出效率）。 */
+    private static final double PASSIVE_COOLING_TRANSFER_EFFICIENCY = 0.2d;
+    private static final double PASSIVE_COOLING_POWER_EFFICIENCY = 0.5d;
+
     private final BlockPos _anchor;
     private final int _fuelRods;
     private final int _controlRods;
@@ -84,6 +92,9 @@ public class CompactReactorController extends MultiblockReactor implements IComp
     /** 模拟多方块"装配"：触发真实装配回调，初始化能量/燃料/流体容量。 */
     public void simulateAssembly() {
         this.onMachineAssembled();
+        // ER2 发电机缓冲默认 maxInsert=0（原生逻辑只提取不插入），
+        // 打开插入限制，使 updateServer() 的被动等效 FE 补偿可以写入
+        this.getEnergyBuffer().setMaxInsert(WideAmount.MAX_VALUE);
     }
 
     /** 每个服务端游戏刻驱动一次反应堆逻辑。 */
@@ -99,6 +110,44 @@ public class CompactReactorController extends MultiblockReactor implements IComp
     /** 设置模拟控制棒插入比例（0-100），与真实控制棒语义一致。 */
     public void setControlRodInsertionRatio(int ratio) {
         this._controlRodInsertionRatio = (byte) Math.max(0, Math.min(100, ratio));
+    }
+
+    // ------------------------------------------------------------------
+    // 主动冷却模式 + 被动等效 FE 补偿
+    // ------------------------------------------------------------------
+
+    /**
+     * 压缩反应堆恒为 Active 模式：真实反应堆按是否挂载 FluidPort 部件决定模式，
+     * 压缩机无部件会被判为 Passive，导致水/蒸汽能力完全不工作（容量 0、处理器为空）。
+     * 固定为 Active 后：流体容器按模拟体积计算容量、水进/蒸汽出正常、热量原生转化为蒸汽。
+     */
+    @Override
+    public OperationalMode getOperationalMode() {
+        return OperationalMode.Active;
+    }
+
+    /**
+     * Active 模式下 ReactorLogic 只产蒸汽不产 FE；此处按被动分支同款公式
+     * （温差 × 传热系数 × 0.2 × 0.5 × 配置倍率 × 变体效率）向能量缓冲补记 FE，
+     * 使压缩机同时输出蒸汽与 FE（同一热量双产出，README 已注明）。
+     */
+    @Override
+    protected boolean updateServer() {
+        if (this.isMachineActive()) {
+            final double reactorHeat = this.getReactorHeat().getAsDouble();
+            final double dT = reactorHeat - IHeatEntity.AMBIENT_HEAT;
+            if (dT > 0.01d) {
+                final double fe = dT * this.getReactorToCoolantSystemHeatTransferCoefficient()
+                        * PASSIVE_COOLING_TRANSFER_EFFICIENCY * PASSIVE_COOLING_POWER_EFFICIENCY
+                        * Config.COMMON.general.powerProductionMultiplier.get()
+                        * Config.COMMON.reactor.reactorPowerProductionMultiplier.get()
+                        * this.getVariant().getEnergyGenerationEfficiency();
+                if (fe > 0.0d) {
+                    this.insertEnergy(EnergySystem.ForgeEnergy, WideAmount.from(fe), OperationMode.Execute);
+                }
+            }
+        }
+        return super.updateServer();
     }
 
     // ------------------------------------------------------------------
@@ -118,6 +167,9 @@ public class CompactReactorController extends MultiblockReactor implements IComp
         if (tag.contains("ControlRodInsertionRatio", Tag.TAG_BYTE)) {
             this._controlRodInsertionRatio = tag.getByte("ControlRodInsertionRatio");
         }
+        // 旧存档会带出 ER2 发电机的 maxInsert=0（原生从不插入能量），
+        // 补偿路径需要插入权限，恢复后强制打开
+        this.getEnergyBuffer().setMaxInsert(WideAmount.MAX_VALUE);
     }
 
     /** 向燃料容器注入燃料（如黄钇矿铤），返回实际注入量。 */
@@ -138,8 +190,9 @@ public class CompactReactorController extends MultiblockReactor implements IComp
 
     @Override
     public int getFuelCapacity() {
-        // 燃料总容量由模拟装配时的燃料棒数量决定（用能量缓冲容量近似表示）
-        return (int) this.getCapacity(EnergySystem.ForgeEnergy).longValue();
+        // 燃料容器容量：MultiblockReactor 的无参 getCapacity() 即燃料容量
+        //（getCapacity(EnergySystem) 是能量缓冲容量，与燃料容量是两回事）
+        return this.getCapacity();
     }
 
     @Override
@@ -233,6 +286,13 @@ public class CompactReactorController extends MultiblockReactor implements IComp
     }
 
     @Override
+    public int getPartsCount() {
+        // 能量缓冲容量 = 每部件容量 × 部件总数 × 倍率（onMachineAssembled 使用无参版本），
+        // 基类返回已连接部件数（恒 0），必须覆写为模拟结构方块数
+        return this._sizeX * this._sizeY * this._sizeZ;
+    }
+
+    @Override
     public int getFuelRodsCount() {
         return this._fuelRods;
     }
@@ -240,6 +300,18 @@ public class CompactReactorController extends MultiblockReactor implements IComp
     @Override
     public int getControlRodsCount() {
         return this._controlRods;
+    }
+
+    /**
+     * 压缩机器没有真实控制棒部件。基类的边界检查使用被覆写的
+     * {@link #getControlRodsCount()}（返回模拟值），通过检查后会直接索引空的
+     * 部件链表（IndexOutOfBoundsException）。返回空 Optional 与
+     * "该部件不存在"的 API 语义一致，createFuelRodsLayout 会安全走
+     * orElse(Direction.UP) 分支。
+     */
+    @Override
+    public Optional<it.zerono.mods.extremereactors.gamecontent.multiblock.reactor.part.ReactorControlRodEntity> getControlRodByIndex(int index) {
+        return Optional.empty();
     }
 
     @Override
@@ -262,6 +334,14 @@ public class CompactReactorController extends MultiblockReactor implements IComp
     @Override
     public IRadiationModerator getModerator(BlockPos pos) {
         return NOOP_MODERATOR;
+    }
+
+    @Override
+    public float getFuelToReactorHeatTransferCoefficient() {
+        // 基类系数 = 真实燃料棒导热率之和（压缩机无部件 → 0，燃料热量无法传入堆体，
+        // 堆温恒为环境温度）。模拟"燃料棒立于反应堆内腔空气中"的真实近似：
+        // 每棒 4 个水平暴露面 × 空气导热率 × 模拟棒数
+        return 4.0f * IHeatEntity.CONDUCTIVITY_AIR * this._fuelRods;
     }
 
     @Override

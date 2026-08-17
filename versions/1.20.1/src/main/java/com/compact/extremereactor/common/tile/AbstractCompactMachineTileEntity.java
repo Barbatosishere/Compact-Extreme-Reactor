@@ -57,6 +57,13 @@ public abstract class AbstractCompactMachineTileEntity extends BlockEntity {
     @Nullable
     private IFluidHandler _fluidHandler;
 
+    /** LazyOptional 缓存：同一能力必须返回同一实例并在失效时通知缓存方（Forge 规范）。 */
+    @Nullable
+    private LazyOptional<IEnergyStorage> _energyCapability;
+
+    @Nullable
+    private LazyOptional<IFluidHandler> _fluidCapability;
+
     public AbstractCompactMachineTileEntity(BlockEntityType<?> type, BlockPos pos, BlockState state) {
         super(type, pos, state);
     }
@@ -162,6 +169,21 @@ public abstract class AbstractCompactMachineTileEntity extends BlockEntity {
         this._initialized = false;
         this._energyStorage = null;
         this._fluidHandler = null;
+        this.invalidateCaps();
+    }
+
+    @Override
+    public void invalidateCaps() {
+        super.invalidateCaps();
+        // Forge 1.20：失效已分发的 LazyOptional，让相邻线缆/机器及时丢弃缓存引用
+        if (this._energyCapability != null) {
+            this._energyCapability.invalidate();
+            this._energyCapability = null;
+        }
+        if (this._fluidCapability != null) {
+            this._fluidCapability.invalidate();
+            this._fluidCapability = null;
+        }
     }
 
     // ------------------------------------------------------------------
@@ -183,6 +205,30 @@ public abstract class AbstractCompactMachineTileEntity extends BlockEntity {
     public IFluidHandler getFluidHandler(@Nullable Direction side) {
         this.getController(); // 触发懒初始化（服务端）
         return this._fluidHandler;
+    }
+
+    /** 能量能力的 LazyOptional 视图（缓存单实例，失效后自动重建）。 */
+    public LazyOptional<IEnergyStorage> getEnergyCapability(@Nullable Direction side) {
+        final IEnergyStorage storage = this.getEnergyStorage(side);
+        if (storage == null) {
+            return LazyOptional.empty();
+        }
+        if (this._energyCapability == null || !this._energyCapability.isPresent()) {
+            this._energyCapability = LazyOptional.of(() -> storage);
+        }
+        return this._energyCapability.cast();
+    }
+
+    /** 流体能力的 LazyOptional 视图（缓存单实例，失效后自动重建）。 */
+    public LazyOptional<IFluidHandler> getFluidCapability(@Nullable Direction side) {
+        final IFluidHandler handler = this.getFluidHandler(side);
+        if (handler == null) {
+            return LazyOptional.empty();
+        }
+        if (this._fluidCapability == null || !this._fluidCapability.isPresent()) {
+            this._fluidCapability = LazyOptional.of(() -> handler);
+        }
+        return this._fluidCapability.cast();
     }
 
     // ------------------------------------------------------------------

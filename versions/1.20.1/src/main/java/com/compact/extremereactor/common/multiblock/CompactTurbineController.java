@@ -133,6 +133,13 @@ public class CompactTurbineController extends MultiblockTurbine implements IComp
     }
 
     @Override
+    public int getPartsCount() {
+        // 能量缓冲容量 = 每部件容量 × 部件总数 × 倍率（onMachineAssembled 使用无参版本），
+        // 基类返回已连接部件数（恒 0），必须覆写为模拟结构方块数
+        return this._sizeX * this._sizeY * this._sizeZ;
+    }
+
+    @Override
     public int getRotorBladesCount() {
         // 模拟布局中的叶片总数：每层 4 个 x 内部高度层数
         return this.getRotorLayers() * 4;

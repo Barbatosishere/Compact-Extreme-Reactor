@@ -16,6 +16,10 @@ bin/
 run/
 logs/
 crash-reports/
+prodtest/
+versions/*/libraries/
+versions/*/server.jar
+versions/*/*-installer.jar
 
 # 系统文件
 Thumbs.db

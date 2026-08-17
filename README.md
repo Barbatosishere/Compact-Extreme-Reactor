@@ -10,8 +10,8 @@ Place one block and get an entire functional multiblock machine, fully reusing E
 
 ## ✨ Features
 
-- **Compact Reactor** (`compact_reactor`): fuel rods, control rods and power tap counts plus internal size are configurable; water in via fluid capability, steam out via fluid capability, power pushed to all 6 adjacent faces each tick (simulated ActivePowerTapFE);
-- **Compact Turbine** (`compact_turbine`): steam in via fluid capability, condensate out; rotor / coil scale defined by the simulated layout and config; no steam → no spin;
+- **Compact Reactor** (`compact_reactor`): fuel rods, control rods and power tap counts plus internal size are configurable; power pushed to all 6 adjacent faces each tick (simulated ActivePowerTapFE) with a passive-equivalent FE credit — outputs FE at full simulated capacity (~3.7k FE/t with defaults). Water/steam fluid ports are registered but the steam conversion path is not functional yet (see Known limitations below);
+- **Compact Turbine** (`compact_turbine`): rotor / coil scale defined by the simulated layout and config; steam can be piped in and stored, but the rotor does not generate power yet (ER2's part-based spin-up internals are not simulated — roadmap item);
 - **Full GUI**: control rod insertion adjustment (−5/+5), machine on/off toggle, void-waste button; live bars for energy / fuel / waste / steam / generated power;
 - **Auto fuel injection**: put a fuel item (e.g. yellorium ingot) into the GUI fuel slot — it is automatically mapped to a `Reactant` and inserted into the fuel container;
 - **Save-compatible**: NBT is delegated to the ER controller (`syncDataFrom` / `syncDataTo`), same save format as ER; capacities are recomputed on simulated assembly.
@@ -81,16 +81,22 @@ Artifacts are at `versions/<mc>/build/libs/compactextremereactor-<version>-<Load
    - **Turbine**: display-only; feed steam with fluid pipes (e.g. from a reactor's steam output);
 3. Draw power with energy cables / conduits from any face (all faces are equivalent on a single block).
 
+## ⚠️ Known limitations
+
+- The compact reactor outputs **FE only** for now — the water→steam conversion and the compact turbine's power generation depend on ER2 part-based internals (vaporization access checks, rotor spin-up) that the single-block simulation does not yet provide. Steam can be piped and stored in the tanks. Steam support is on the roadmap.
+- Forge 1.20.1 dev runs (`runServer`/`runClient`) fail because the bundled ZeroCore/ER2 dependency jars are production (SRG-mapped) builds; production installs are unaffected.
+
 ## ⚙️ Config (`config/compactextremereactor-common.toml`)
 
 | Key | Default | Description |
 |---|---|---|
-| `reactorFuelRods` | 3 | Simulated fuel rod count |
-| `reactorControlRods` | 3 | Simulated control rod count |
-| `reactorPowerTaps` | 6 | Simulated power tap count |
-| `reactorSizeX/Y/Z` | 5 | Simulated reactor shell size |
-| `turbineCoilRadius` | 2 | Turbine coil radius |
-| `turbineSizeX/Y/Z` | 5 | Simulated turbine shell size |
+| `reactor.fuelRods` | 16 | Simulated fuel rod count (fuel capacity = count × per-rod capacity) |
+| `reactor.controlRods` | 4 | Simulated control rod count |
+| `reactor.powerTaps` | 4 | Simulated power tap count |
+| `reactor.sizeX/Y/Z` | 9 | Simulated reactor size (3–64; energy buffer scales with volume) |
+| `turbine.coilRadius` | 3 | Turbine coil radius (1–16) |
+| `turbine.sizeX/Z` | 9 | Simulated turbine size |
+| `turbine.sizeY` | 11 | Turbine shaft height (blades = layers × 4) |
 
 ## 📁 Project layout
 
