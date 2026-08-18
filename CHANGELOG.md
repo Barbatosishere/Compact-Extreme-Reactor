@@ -5,6 +5,12 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0-beta7] - 2026-08-18
+
+### Changed
+
+- Rebuilt and re-verified after the beta6 GUI-toggle / new-machine initialization fixes. Both Forge 1.20.1 and NeoForge 1.21.1 clean-world dedicated-server smoke tests pass: fresh `setblock`-placed machines now initialize their controllers immediately (previously they stayed inert as `{id}`-only entries), capacities report real values (reactor 7.29M FE, turbine 8.91M FE), and no exceptions appear while ticking.
+
 ## [1.0.0-beta6] - 2026-08-17
 
 ### Fixed

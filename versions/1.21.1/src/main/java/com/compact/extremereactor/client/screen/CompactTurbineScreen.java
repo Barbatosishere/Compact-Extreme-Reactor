@@ -29,25 +29,34 @@ public class CompactTurbineScreen extends AbstractContainerScreen<CompactTurbine
         guiGraphics.blit(BACKGROUND, this.leftPos, this.topPos, 0, 0, this.imageWidth, this.imageHeight, 256, 256);
 
         // 能量条（右上，竖直）
-        this.renderBar(guiGraphics, this.leftPos + 152, this.topPos + 17, 16, 60,
+        this.renderVerticalBar(guiGraphics, this.leftPos + 152, this.topPos + 17, 16, 60,
                 this.menu.getData(CompactTurbineMenu.DATA_ENERGY),
                 this.menu.getData(CompactTurbineMenu.DATA_ENERGY_CAPACITY), 0xFFE8B000);
-        // 蒸汽条（淡蓝）
-        this.renderBar(guiGraphics, this.leftPos + 8, this.topPos + 17, 80, 8,
+        // 蒸汽条（水平，淡蓝）
+        this.renderHorizontalBar(guiGraphics, this.leftPos + 8, this.topPos + 17, 80, 8,
                 this.menu.getData(CompactTurbineMenu.DATA_STEAM),
                 this.menu.getData(CompactTurbineMenu.DATA_FLUID_CAPACITY), 0xFFB0D0E0);
-        // 冷凝水条（深蓝）
-        this.renderBar(guiGraphics, this.leftPos + 8, this.topPos + 27, 80, 8,
+        // 冷凝水条（水平，深蓝）
+        this.renderHorizontalBar(guiGraphics, this.leftPos + 8, this.topPos + 27, 80, 8,
                 this.menu.getData(CompactTurbineMenu.DATA_WATER),
                 this.menu.getData(CompactTurbineMenu.DATA_FLUID_CAPACITY), 0xFF2050A0);
     }
 
-    /** 绘制一个带黑色边框、按比例填充的条。 */
-    private void renderBar(GuiGraphics guiGraphics, int x, int y, int width, int height, int value, int capacity, int color) {
+    /** 绘制一个带黑色边框、按比例竖直填充的条（从下往上）。 */
+    private void renderVerticalBar(GuiGraphics guiGraphics, int x, int y, int width, int height, int value, int capacity, int color) {
         guiGraphics.fill(x, y, x + width, y + height, 0xFF000000);
         if (capacity > 0 && value > 0) {
-            final int filled = (int) Math.min(height - 2, (height - 2) * value / (float) capacity);
+            final int filled = Math.min(height - 2, (height - 2) * value / capacity);
             guiGraphics.fill(x + 1, y + height - 1 - filled, x + width - 1, y + height - 1, color);
+        }
+    }
+
+    /** 绘制一个带黑色边框、按比例水平填充的条（从左往右）。 */
+    private void renderHorizontalBar(GuiGraphics guiGraphics, int x, int y, int width, int height, int value, int capacity, int color) {
+        guiGraphics.fill(x, y, x + width, y + height, 0xFF000000);
+        if (capacity > 0 && value > 0) {
+            final int filled = Math.min(width - 2, (width - 2) * value / capacity);
+            guiGraphics.fill(x + 1, y + 1, x + 1 + filled, y + height - 1, color);
         }
     }
 
