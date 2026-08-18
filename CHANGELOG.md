@@ -5,6 +5,19 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0-beta6] - 2026-08-17
+
+### Fixed
+
+- **GUI toggle button (开关) had no response on newly placed machines** — `ReactorData.get()` / `TurbineData.get()` returned 0 for all data slots including `DATA_POS_READY` when the controller was null, which kept the toggle/control-rod buttons disabled in the GUI. Position data is now resolved before the controller null check, so buttons are always enabled.
+- **Newly placed machines (setblock / player placement) did not initialize their controller** — the controller initialization was deferred to the first `serverTick()`, but the ticker registration path was unreliable for `setblock`-placed block entities. Both `setLevel()` and `onLoad()` now call `initController()` proactively, and `setChanged()` ensures the initial state (active, capacities, control rod ratio) is persisted immediately.
+- All Chinese "压缩反应堆" references renamed to "压缩极限反应堆" (block lang, README_zh_CN, Javadocs) for both 1.20.1 and 1.21.1.
+
+### Changed
+
+- `AbstractCompactMachineTileEntity` now overrides `setLevel()` to initialize the controller when the block entity is first attached to a world, ensuring setblock and player-placed machines work identically.
+- `DATA_POS_READY` and block position data are now served independently of the controller state in both `ReactorData` and `TurbineData`, so the GUI is always functional even if the controller hasn't been created yet.
+
 ## [1.0.0-beta5] - 2026-08-16
 
 ### Fixed
