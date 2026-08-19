@@ -8,6 +8,7 @@
   "gui.compactextremereactor.toggle": "On/Off",
   "gui.compactextremereactor.void_waste": "Void Waste",
   "gui.compactextremereactor.fuel": "Fuel: %s",
+  "gui.compactextremereactor.waste": "Waste: %s",
   "gui.compactextremereactor.energy": "%s FE",
   "gui.compactextremereactor.power": "Power: %s FE/t",
   "gui.compactextremereactor.steam": "Steam: %s",

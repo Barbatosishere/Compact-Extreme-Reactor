@@ -5,6 +5,27 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0-beta8] - 2026-08-20
+
+### Fixed
+
+- **GUI 菜单在客户端仍可操作** — `stillValid()` 在客户端侧返回 false，导致玩家打开 GUI 后方块被判定为"不可用"；现在两端一致放行。
+- **燃料重复注入漏洞（高）** — 燃料槽点击时 `Simulate` 阶段先做数量校验、`Execute` 阶段再减少放置槽数量，但两阶段间物品堆可被替换，导致同一份燃料被重复塞入燃料容器；现改为以模拟结果为准、执行阶段不再二次注入。
+- **能量条渲染 int 溢出（中）** — 能量条按当前/最大能量计算渲染宽度时使用 `int` 相乘可能溢出（能量上限数百万 FE），渲染比例错乱；改用 `long` 计算。
+- **菜单数据 int 截断溢出** — 反应堆/涡轮机菜单的 4 个数据源（能量、燃料、废物、温度）在打包进菜单槽时用 `int` 存放大数值能量被截断，GUI 显示错误；改用大容量传输。
+- **涡轮机 `getRotorComponentTypeAt()` Y 轴墙体误判** — Y 轴检测逻辑把实体转子列当成墙体排除，导致转子组件类型判断失败。
+- **`getReactorHeat()` NoSuchElementException** — 反应堆控制器取第一加热组件时用 `getFirst()`，空列表抛异常导致崩溃；改用安全取值。
+- **废物条使用燃料容量代替废物容量** — 废物条渲染比例基于燃料容量计算，显示错误；改用废物容器容量。
+- **涡轮机线圈 tag 解析错误** — 线圈 tag 解析用了错误的注册名/路径，导致线圈数量恒为 0。
+- **`onBlockRemoved()` 未清理 `_pendingControllerTag`（低）** — 方块移除时待应用的 controller NBT 未清空，可能把残留下发状态应用到后续方块。
+- **`adjustControlRod` 快速点击竞态（低）** — 快速点击控制棒按钮时多次请求叠加，服务端处理顺序错乱；现在模拟阶段先行确认。
+- **控制棒英文文本超出 GUI 边界（低）** — 控制棒插入比例文本过长被截断；调整布局。
+- **反应堆屏幕添加废物量标签（低）** — 废物容量没有单独标签，补上。
+
+### Changed
+
+- **构建网络优化（国内环境）** — `build.gradle` 增加 Aliyun Maven Central 镜像（20MB/s），并移除连接被重置的 `maven.neoforged.net` 官方仓库（改走 `neoforged.forgecdn.net` 镜像），`createMinecraftArtifacts` 不再卡死（原来每个依赖重试 8 次、一次构建十几分钟以上）。
+
 ## [1.0.0-beta7] - 2026-08-18
 
 ### Changed

@@ -34,19 +34,23 @@ public class CompactEnergyStorage implements IEnergyStorage {
             return 0;
         }
         final OperationMode mode = simulate ? OperationMode.Simulate : OperationMode.Execute;
-        return (int) this._delegate
+        final long extracted = this._delegate
                 .extractEnergy(EnergySystem.ForgeEnergy, WideAmount.from(maxExtract), mode)
                 .longValue();
+        // 防止 long 超出 int 范围时截断
+        return extracted > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) extracted;
     }
 
     @Override
     public int getEnergyStored() {
-        return (int) this._delegate.getEnergyStored(EnergySystem.ForgeEnergy).longValue();
+        final long energy = this._delegate.getEnergyStored(EnergySystem.ForgeEnergy).longValue();
+        return energy > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) energy;
     }
 
     @Override
     public int getMaxEnergyStored() {
-        return (int) this._delegate.getCapacity(EnergySystem.ForgeEnergy).longValue();
+        final long capacity = this._delegate.getCapacity(EnergySystem.ForgeEnergy).longValue();
+        return capacity > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) capacity;
     }
 
     @Override

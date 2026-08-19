@@ -193,6 +193,7 @@ public abstract class AbstractCompactMachineTileEntity extends BlockEntity {
         this._initialized = false;
         this._energyStorage = null;
         this._fluidHandler = null;
+        this._pendingControllerTag = null;
         this.invalidateCaps();
     }
 

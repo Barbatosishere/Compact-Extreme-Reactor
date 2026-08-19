@@ -39,6 +39,7 @@ public class CompactReactorMenu extends AbstractContainerMenu {
     public static final int DATA_FUEL = 6;
     public static final int DATA_WASTE = 7;
     public static final int DATA_FUEL_CAPACITY = 8;
+    public static final int DATA_WASTE_CAPACITY = 8; // 废料与燃料共享同一容器容量
     public static final int DATA_CONTROL_ROD = 9;
     public static final int DATA_COUNT = 10;
 
@@ -100,12 +101,16 @@ public class CompactReactorMenu extends AbstractContainerMenu {
         ReactantMappingsRegistry.getFromSolid(stack).ifPresent(mapping -> {
             final ICompactController controller = this._tile.getController();
             if (controller instanceof CompactReactorController reactor) {
-                // 一个（或几个）物品对应 mapping 的燃料量；注入成功才消耗物品
+                // 先检查物品数量足够，再模拟注入确认可完全注入，最后执行注入并消耗物品
+                // 使用 Simulate 模式防止部分注入导致燃料复制漏洞
                 final int productAmount = mapping.getProductAmount();
-                final int inserted = reactor.insertFuel(mapping.getProduct(), productAmount, OperationMode.Execute);
-                if (inserted >= productAmount && stack.getCount() >= mapping.getSourceAmount()) {
-                    stack.shrink(mapping.getSourceAmount());
-                    this._tile.setChanged();
+                if (stack.getCount() >= mapping.getSourceAmount()) {
+                    final int simulated = reactor.insertFuel(mapping.getProduct(), productAmount, OperationMode.Simulate);
+                    if (simulated >= productAmount) {
+                        reactor.insertFuel(mapping.getProduct(), productAmount, OperationMode.Execute);
+                        stack.shrink(mapping.getSourceAmount());
+                        this._tile.setChanged();
+                    }
                 }
             }
         });
@@ -139,7 +144,18 @@ public class CompactReactorMenu extends AbstractContainerMenu {
 
     @Override
     public boolean stillValid(Player player) {
-        return this._tile != null && player.distanceToSqr(this._tile.getBlockPos().getCenter()) < 64;
+        // 客户端 _tile 为 null（客户端构造不持有 TileEntity），改用同步来的坐标数据做距离校验。
+        // 数据尚未同步（DATA_POS_READY != 1）时保持打开，避免 GUI 刚打开就被关闭。
+        if (this._tile != null) {
+            return player.distanceToSqr(this._tile.getBlockPos().getCenter()) < 64;
+        }
+        if (this._data.get(DATA_POS_READY) != 1) {
+            return true;
+        }
+        final double x = this._data.get(DATA_POS_X) + 0.5;
+        final double y = this._data.get(DATA_POS_Y) + 0.5;
+        final double z = this._data.get(DATA_POS_Z) + 0.5;
+        return player.distanceToSqr(x, y, z) < 64;
     }
 
     @Override
@@ -182,8 +198,8 @@ public class CompactReactorMenu extends AbstractContainerMenu {
                         yield 0;
                     }
                     yield switch (index) {
-                        case DATA_ENERGY -> (int) controller.getEnergyStored(EnergySystem.ForgeEnergy).longValue();
-                        case DATA_ENERGY_CAPACITY -> (int) controller.getCapacity(EnergySystem.ForgeEnergy).longValue();
+                        case DATA_ENERGY -> (int) Math.min(controller.getEnergyStored(EnergySystem.ForgeEnergy).longValue(), Integer.MAX_VALUE);
+                        case DATA_ENERGY_CAPACITY -> (int) Math.min(controller.getCapacity(EnergySystem.ForgeEnergy).longValue(), Integer.MAX_VALUE);
                         case DATA_FUEL -> controller.getFuelAmount();
                         case DATA_WASTE -> controller.getWasteAmount();
                         case DATA_FUEL_CAPACITY -> controller.getFuelCapacity();

@@ -21,6 +21,9 @@ versions/*/libraries/
 versions/*/server.jar
 versions/*/*-installer.jar
 
+# 开发服务器日志
+server-*.log
+
 # 系统文件
 Thumbs.db
 Desktop.ini

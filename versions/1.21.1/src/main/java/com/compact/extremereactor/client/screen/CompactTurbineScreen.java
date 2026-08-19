@@ -46,7 +46,7 @@ public class CompactTurbineScreen extends AbstractContainerScreen<CompactTurbine
     private void renderVerticalBar(GuiGraphics guiGraphics, int x, int y, int width, int height, int value, int capacity, int color) {
         guiGraphics.fill(x, y, x + width, y + height, 0xFF000000);
         if (capacity > 0 && value > 0) {
-            final int filled = Math.min(height - 2, (height - 2) * value / capacity);
+            final int filled = Math.min(height - 2, (int)((long)(height - 2) * value / capacity));
             guiGraphics.fill(x + 1, y + height - 1 - filled, x + width - 1, y + height - 1, color);
         }
     }
@@ -55,7 +55,7 @@ public class CompactTurbineScreen extends AbstractContainerScreen<CompactTurbine
     private void renderHorizontalBar(GuiGraphics guiGraphics, int x, int y, int width, int height, int value, int capacity, int color) {
         guiGraphics.fill(x, y, x + width, y + height, 0xFF000000);
         if (capacity > 0 && value > 0) {
-            final int filled = Math.min(width - 2, (width - 2) * value / capacity);
+            final int filled = Math.min(width - 2, (int)((long)(width - 2) * value / capacity));
             guiGraphics.fill(x + 1, y + 1, x + 1 + filled, y + height - 1, color);
         }
     }

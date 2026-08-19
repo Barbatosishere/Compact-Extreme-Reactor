@@ -15,7 +15,6 @@ import net.minecraft.network.protocol.game.ClientGamePacketListener;
 import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityType;
-import net.minecraft.world.level.block.entity.TickingBlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.energy.IEnergyStorage;
@@ -49,9 +48,6 @@ public abstract class AbstractCompactMachineTileEntity extends BlockEntity {
     private CompoundTag _pendingControllerTag;
 
     private boolean _initialized;
-
-    /** 标记 ticker 是否已注册（1.21.1 的 LevelChunk.setBlockEntity 不自动注册 ticker，需手动注册）。 */
-    private boolean _tickerAdded;
 
     /** 能力对象缓存（NeoForge 1.21 能力系统直接返回对象，无需 LazyOptional）。 */
     @Nullable
@@ -102,51 +98,16 @@ public abstract class AbstractCompactMachineTileEntity extends BlockEntity {
         this._energyStorage = new CompactEnergyStorage(this._controller);
         this._fluidHandler = this.createFluidHandler(this._controller);
         this._initialized = true;
-        this.registerTicker();
         // 初始化完成后立即标记脏数据：新机器的激活状态/容量/初始控制器数据
         // 必须及时进入存档，而不是等到每 20 tick 或首个 GUI 操作才保存
         this.setChanged();
-    }
-
-    /**
-     * NeoForge 1.21.1 的 {@code LevelChunk.setBlockEntity()} 不会像 Forge 1.20.1 那样自动注册
-     * ticker（反编译确认：1.21.1 的 ticker 注册只发生在 chunk 加载的
-     * {@code registerAllBlockEntitiesAfterLevelLoad()} → {@code updateBlockEntityTicker()}，
-     * setblock/玩家放置路径不走它），导致 {@code serverTick()} 对新建机器永不执行。
-     * 这里手动调用 {@code addBlockEntityTicker} 补上注册。
-     */
-    private void registerTicker() {
-        if (this.level == null || this.level.isClientSide || this._tickerAdded) {
-            return;
-        }
-        this._tickerAdded = true;
-        this.level.addBlockEntityTicker(new TickingBlockEntity() {
-            @Override
-            public void tick() {
-                AbstractCompactMachineTileEntity.this.serverTick();
-            }
-
-            @Override
-            public boolean isRemoved() {
-                return AbstractCompactMachineTileEntity.this.isRemoved();
-            }
-
-            @Override
-            public BlockPos getPos() {
-                return AbstractCompactMachineTileEntity.this.worldPosition;
-            }
-
-            @Override
-            public String getType() {
-                return "compactextremereactor:ticker";
-            }
-        });
     }
 
     @Override
     public void onLoad() {
         super.onLoad();
         // 方块实体加入世界时即初始化控制器，新建机器不必等待首个 serverTick
+        // 注意：setLevel 不调 initController()，避免 onControllerInitialized() 被调用两次
         if (this.level != null && !this.level.isClientSide) {
             this.initController();
         }
@@ -155,11 +116,7 @@ public abstract class AbstractCompactMachineTileEntity extends BlockEntity {
     @Override
     public void setLevel(net.minecraft.world.level.Level level) {
         super.setLevel(level);
-        // setLevel 在方块实体挂载到世界时必定调用（含 setblock/玩家放置/加载存档），
-        // 比 onLoad 更可靠：确保控制器在首个 tick 前就已初始化，GUI 开关/调节立即可用
-        if (this.level != null && !this.level.isClientSide) {
-            this.initController();
-        }
+        // 只设置 level，不做初始化。初始化统一在 onLoad() 中进行。
     }
 
     /** 创建流体能力包装（子类实现：反应堆=水进/蒸汽出，涡轮机=蒸汽进/水出）。 */
@@ -221,6 +178,7 @@ public abstract class AbstractCompactMachineTileEntity extends BlockEntity {
         this._initialized = false;
         this._energyStorage = null;
         this._fluidHandler = null;
+        this._pendingControllerTag = null;
     }
 
     // ------------------------------------------------------------------
@@ -263,7 +221,11 @@ public abstract class AbstractCompactMachineTileEntity extends BlockEntity {
     protected void loadAdditional(CompoundTag tag, HolderLookup.Provider registries) {
         super.loadAdditional(tag, registries);
         if (tag.contains("controller")) {
-            loadControllerData(tag.getCompound("controller"), registries);
+            CompoundTag controllerTag = tag.getCompound("controller");
+            // 防御性检查：确保 tag 有效且非空
+            if (controllerTag != null && !controllerTag.isEmpty()) {
+                loadControllerData(controllerTag, registries);
+            }
         }
     }
 

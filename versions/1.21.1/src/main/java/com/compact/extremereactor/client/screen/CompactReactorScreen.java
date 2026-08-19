@@ -29,6 +29,9 @@ public class CompactReactorScreen extends AbstractContainerScreen<CompactReactor
     private Button _toggleButton;
     private Button _wasteButton;
 
+    /** 客户端本地控制棒插入比例，避免快速点击时读取陈旧同步值的竞态条件。 */
+    private int _localControlRodRatio = 50;
+
     public CompactReactorScreen(CompactReactorMenu menu, Inventory playerInventory, Component title) {
         super(menu, playerInventory, title);
         this.imageWidth = 176;
@@ -59,6 +62,8 @@ public class CompactReactorScreen extends AbstractContainerScreen<CompactReactor
         this._plusButton.active = ready;
         this._toggleButton.active = ready;
         this._wasteButton.active = ready;
+        // 与服务器同步本地的控制棒比例值
+        this._localControlRodRatio = this.menu.getData(CompactReactorMenu.DATA_CONTROL_ROD);
     }
 
     /** 从同步数据中解析方块坐标；未同步完成时返回 null。 */
@@ -78,8 +83,8 @@ public class CompactReactorScreen extends AbstractContainerScreen<CompactReactor
         if (pos == null) {
             return;
         }
-        final int ratio = Math.clamp(this.menu.getData(CompactReactorMenu.DATA_CONTROL_ROD) + delta, 0, 100);
-        PacketDistributor.sendToServer(new ModPackets.ControlRodPayload(pos, ratio));
+        this._localControlRodRatio = Math.clamp(this._localControlRodRatio + delta, 0, 100);
+        PacketDistributor.sendToServer(new ModPackets.ControlRodPayload(pos, this._localControlRodRatio));
     }
 
     /** 发送机器动作指令到服务端。 */
@@ -110,14 +115,14 @@ public class CompactReactorScreen extends AbstractContainerScreen<CompactReactor
         // 废物条（水平，深灰）
         this.renderHorizontalBar(guiGraphics, this.leftPos + 8, this.topPos + 67, 80, 8,
                 this.menu.getData(CompactReactorMenu.DATA_WASTE),
-                this.menu.getData(CompactReactorMenu.DATA_FUEL_CAPACITY), 0xFF707070);
+                this.menu.getData(CompactReactorMenu.DATA_WASTE_CAPACITY), 0xFF707070);
     }
 
     /** 绘制一个带黑色边框、按比例竖直填充的条（从下往上）。 */
     private void renderVerticalBar(GuiGraphics guiGraphics, int x, int y, int width, int height, int value, int capacity, int color) {
         guiGraphics.fill(x, y, x + width, y + height, 0xFF000000);
         if (capacity > 0 && value > 0) {
-            final int filled = Math.min(height - 2, (height - 2) * value / capacity);
+            final int filled = Math.min(height - 2, (int)((long)(height - 2) * value / capacity));
             guiGraphics.fill(x + 1, y + height - 1 - filled, x + width - 1, y + height - 1, color);
         }
     }
@@ -126,7 +131,7 @@ public class CompactReactorScreen extends AbstractContainerScreen<CompactReactor
     private void renderHorizontalBar(GuiGraphics guiGraphics, int x, int y, int width, int height, int value, int capacity, int color) {
         guiGraphics.fill(x, y, x + width, y + height, 0xFF000000);
         if (capacity > 0 && value > 0) {
-            final int filled = Math.min(width - 2, (width - 2) * value / capacity);
+            final int filled = Math.min(width - 2, (int)((long)(width - 2) * value / capacity));
             guiGraphics.fill(x + 1, y + 1, x + 1 + filled, y + height - 1, color);
         }
     }
@@ -137,12 +142,17 @@ public class CompactReactorScreen extends AbstractContainerScreen<CompactReactor
         guiGraphics.drawString(this.font,
                 Component.translatable("gui.compactextremereactor.control_rod",
                         this.menu.getData(CompactReactorMenu.DATA_CONTROL_ROD)),
-                100, 8, 0xFFFFFF);
-        // 燃料/废物量文本
+                80, 8, 0xFFFFFF);
+        // 燃料量文本
         guiGraphics.drawString(this.font,
                 Component.translatable("gui.compactextremereactor.fuel",
                         this.menu.getData(CompactReactorMenu.DATA_FUEL)),
                 8, 47, 0xFFFFFF);
+        // 废物量文本
+        guiGraphics.drawString(this.font,
+                Component.translatable("gui.compactextremereactor.waste",
+                        this.menu.getData(CompactReactorMenu.DATA_WASTE)),
+                8, 77, 0xFFFFFF);
         // 能量值文本
         guiGraphics.drawString(this.font,
                 Component.translatable("gui.compactextremereactor.energy",

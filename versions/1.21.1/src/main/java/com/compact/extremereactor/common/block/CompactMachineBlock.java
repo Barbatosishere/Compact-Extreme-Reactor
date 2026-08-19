@@ -31,6 +31,8 @@ public class CompactMachineBlock extends Block implements EntityBlock {
     @Override
     public <T extends BlockEntity> BlockEntityTicker<T> getTicker(Level level, BlockState state, BlockEntityType<T> type) {
         // 服务端 tick：驱动控制器模拟；客户端不做逻辑
+        // 1.21.1 的 addAndRegisterBlockEntity 会调用 updateBlockEntityTicker 来注册此 ticker，
+        // registerAllBlockEntitiesAfterLevelLoad 同样会调用它，因此 setblock 和 chunk 加载路径都有效
         return level.isClientSide ? null : (lvl, pos, st, be) -> {
             if (be instanceof AbstractCompactMachineTileEntity machine) {
                 machine.serverTick();

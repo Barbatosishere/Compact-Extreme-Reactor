@@ -78,7 +78,18 @@ public class CompactTurbineMenu extends AbstractContainerMenu {
 
     @Override
     public boolean stillValid(Player player) {
-        return this._tile != null && player.distanceToSqr(this._tile.getBlockPos().getCenter()) < 64;
+        // 客户端 _tile 为 null（客户端构造不持有 TileEntity），改用同步来的坐标数据做距离校验。
+        // 数据尚未同步（DATA_POS_READY != 1）时保持打开，避免 GUI 刚打开就被关闭。
+        if (this._tile != null) {
+            return player.distanceToSqr(this._tile.getBlockPos().getCenter()) < 64;
+        }
+        if (this._data.get(DATA_POS_READY) != 1) {
+            return true;
+        }
+        final double x = this._data.get(DATA_POS_X) + 0.5;
+        final double y = this._data.get(DATA_POS_Y) + 0.5;
+        final double z = this._data.get(DATA_POS_Z) + 0.5;
+        return player.distanceToSqr(x, y, z) < 64;
     }
 
     /** 读取同步数据槽。 */
@@ -109,12 +120,12 @@ public class CompactTurbineMenu extends AbstractContainerMenu {
                         yield 0;
                     }
                     yield switch (index) {
-                        case DATA_ENERGY -> (int) controller.getEnergyStored(EnergySystem.ForgeEnergy).longValue();
-                        case DATA_ENERGY_CAPACITY -> (int) controller.getCapacity(EnergySystem.ForgeEnergy).longValue();
+                        case DATA_ENERGY -> (int) Math.min(controller.getEnergyStored(EnergySystem.ForgeEnergy).longValue(), Integer.MAX_VALUE);
+                        case DATA_ENERGY_CAPACITY -> (int) Math.min(controller.getCapacity(EnergySystem.ForgeEnergy).longValue(), Integer.MAX_VALUE);
                         case DATA_STEAM -> controller.getFluidContainer().getGasAmount();
                         case DATA_WATER -> controller.getFluidContainer().getLiquidAmount();
                         case DATA_FLUID_CAPACITY -> controller.getFluidContainer().getCapacity();
-                        case DATA_POWER -> (int) controller.getEnergyGeneratedLastTick();
+                        case DATA_POWER -> (int) Math.min(controller.getEnergyGeneratedLastTick(), (double) Integer.MAX_VALUE);
                         default -> 0;
                     };
                 }

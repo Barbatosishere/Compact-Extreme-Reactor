@@ -8,6 +8,7 @@
   "gui.compactextremereactor.toggle": "开关",
   "gui.compactextremereactor.void_waste": "清除废料",
   "gui.compactextremereactor.fuel": "燃料：%s",
+  "gui.compactextremereactor.waste": "废料：%s",
   "gui.compactextremereactor.energy": "%s FE",
   "gui.compactextremereactor.power": "发电：%s FE/t",
   "gui.compactextremereactor.steam": "蒸汽：%s",

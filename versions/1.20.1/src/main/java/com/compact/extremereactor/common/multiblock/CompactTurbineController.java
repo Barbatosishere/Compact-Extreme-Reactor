@@ -1,5 +1,6 @@
 package com.compact.extremereactor.common.multiblock;
 
+import com.compact.extremereactor.CompactExtremeReactor;
 import it.zerono.mods.extremereactors.api.turbine.CoilMaterial;
 import it.zerono.mods.extremereactors.api.turbine.CoilMaterialRegistry;
 import it.zerono.mods.extremereactors.gamecontent.multiblock.turbine.MultiblockTurbine;
@@ -165,6 +166,12 @@ public class CompactTurbineController extends MultiblockTurbine implements IComp
     public RotorComponentType getRotorComponentTypeAt(BlockPos pos) {
         // 依据模拟布局判定位置类型：转轴/叶片/线圈/忽略
         final CuboidBoundingBox bb = this.getBoundingBox();
+
+        // 排除 Y 轴面（顶部和底部墙壁），这些位置是涡轮机外壳，不属于转子/线圈区域
+        if (pos.getY() == bb.getMinY() || pos.getY() == bb.getMaxY()) {
+            return RotorComponentType.Ignore;
+        }
+
         final int cx = (bb.getMinX() + bb.getMaxX()) / 2;
         final int cz = (bb.getMinZ() + bb.getMaxZ()) / 2;
 
@@ -191,6 +198,10 @@ public class CompactTurbineController extends MultiblockTurbine implements IComp
     @Override
     public Optional<CoilMaterial> getCoilBlock(BlockPos pos) {
         // 在候选线圈区域返回真实线圈材料（金线圈），供 TurbineData 计算感应参数
-        return CoilMaterialRegistry.get(COIL_TAG);
+        final Optional<CoilMaterial> result = CoilMaterialRegistry.get(COIL_TAG);
+        if (result.isEmpty()) {
+            CompactExtremeReactor.LOGGER.warn("线圈材料未找到: tag={}, pos={}", COIL_TAG.location(), pos);
+        }
+        return result;
     }
 }
