@@ -113,20 +113,22 @@ public abstract class AbstractCompactMachineTileEntity extends BlockEntity {
     @Override
     public void onLoad() {
         super.onLoad();
-        // 方块实体加入世界时即初始化控制器，新建机器不必等待首个 serverTick
-        if (this.level != null && !this.level.isClientSide) {
-            this.initController();
+        // 控制器初始化必须延迟到服务端主线程执行，避免在 onLoad 区块加载路径上
+        // 直接 initController → simulateAssembly → notifyBlockUpdate → getBlockState
+        // 与 chunk 锁死锁（Forge 1.20.1 实测）。用 getServer().execute 提交到主线程，
+        // 区块加载完成后自然执行，安全且及时。
+        // 注意：setLevel 不调 initController 的原因同上。
+        if (this.level != null && !this.level.isClientSide && this.level.getServer() != null) {
+            this.level.getServer().execute(() -> {
+                this.initController();
+            });
         }
     }
 
     @Override
     public void setLevel(net.minecraft.world.level.Level level) {
         super.setLevel(level);
-        // setLevel 在方块实体挂载到世界时必定调用（含 setblock/玩家放置/加载存档），
-        // 比 onLoad 更可靠：确保控制器在首个 tick 前就已初始化，GUI 开关/调节立即可用
-        if (this.level != null && !this.level.isClientSide) {
-            this.initController();
-        }
+        // 见 onLoad 注释：不在区块加载路径上初始化控制器，避免 chunk 锁死锁。
     }
 
     /** 创建流体能力包装（子类实现：反应堆=水进/蒸汽出，涡轮机=蒸汽进/水出）。 */

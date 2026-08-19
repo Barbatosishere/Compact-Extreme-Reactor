@@ -15,6 +15,7 @@ import net.minecraft.network.protocol.game.ClientGamePacketListener;
 import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityType;
+import net.minecraft.world.level.block.entity.TickingBlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.energy.IEnergyStorage;
@@ -48,6 +49,9 @@ public abstract class AbstractCompactMachineTileEntity extends BlockEntity {
     private CompoundTag _pendingControllerTag;
 
     private boolean _initialized;
+
+    /** 标记 ticker 是否已注册（1.21.1 的 LevelChunk.setBlockEntity 不自动注册 ticker，需手动注册）。 */
+    private boolean _tickerAdded;
 
     /** 能力对象缓存（NeoForge 1.21 能力系统直接返回对象，无需 LazyOptional）。 */
     @Nullable
@@ -98,9 +102,45 @@ public abstract class AbstractCompactMachineTileEntity extends BlockEntity {
         this._energyStorage = new CompactEnergyStorage(this._controller);
         this._fluidHandler = this.createFluidHandler(this._controller);
         this._initialized = true;
+        this.registerTicker();
         // 初始化完成后立即标记脏数据：新机器的激活状态/容量/初始控制器数据
         // 必须及时进入存档，而不是等到每 20 tick 或首个 GUI 操作才保存
         this.setChanged();
+    }
+
+    /**
+     * NeoForge 1.21.1 的 {@code LevelChunk.setBlockEntity()} 不会像 Forge 1.20.1 那样自动注册
+     * ticker（反编译确认：1.21.1 的 ticker 注册只发生在 chunk 加载的
+     * {@code registerAllBlockEntitiesAfterLevelLoad()} → {@code updateBlockEntityTicker()}，
+     * setblock/玩家放置路径不走它），导致 {@code serverTick()} 对新建机器永不执行。
+     * 这里手动调用 {@code addBlockEntityTicker} 补上注册。
+     */
+    private void registerTicker() {
+        if (this.level == null || this.level.isClientSide || this._tickerAdded) {
+            return;
+        }
+        this._tickerAdded = true;
+        this.level.addBlockEntityTicker(new TickingBlockEntity() {
+            @Override
+            public void tick() {
+                AbstractCompactMachineTileEntity.this.serverTick();
+            }
+
+            @Override
+            public boolean isRemoved() {
+                return AbstractCompactMachineTileEntity.this.isRemoved();
+            }
+
+            @Override
+            public BlockPos getPos() {
+                return AbstractCompactMachineTileEntity.this.worldPosition;
+            }
+
+            @Override
+            public String getType() {
+                return "compactextremereactor:ticker";
+            }
+        });
     }
 
     @Override

@@ -5,6 +5,7 @@ import it.zerono.mods.extremereactors.api.turbine.CoilMaterialRegistry;
 import it.zerono.mods.extremereactors.gamecontent.multiblock.turbine.MultiblockTurbine;
 import it.zerono.mods.extremereactors.gamecontent.multiblock.turbine.rotor.RotorComponentType;
 import it.zerono.mods.extremereactors.gamecontent.multiblock.turbine.variant.TurbineVariant;
+import it.zerono.mods.zerocore.lib.data.WideAmount;
 import it.zerono.mods.zerocore.lib.data.geometry.CuboidBoundingBox;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.Registries;
@@ -65,6 +66,10 @@ public class CompactTurbineController extends MultiblockTurbine implements IComp
      */
     public void simulateAssembly() {
         this.onMachineAssembled();
+        // 打开能量缓冲的插入限制，使 TurbineLogic 的发电量可以写入（与反应堆控制器一致）
+        this.getEnergyBuffer().setMaxInsert(WideAmount.MAX_VALUE);
+        // 接合感应线圈：压缩涡轮机无控制棒，模拟内建稳压装置，始终发电
+        this.setInductorEngaged(true);
     }
 
     /** 每个服务端游戏刻驱动一次涡轮机逻辑。 */
@@ -75,6 +80,12 @@ public class CompactTurbineController extends MultiblockTurbine implements IComp
     // ------------------------------------------------------------------
     // 模拟"谎报"区
     // ------------------------------------------------------------------
+
+    @Override
+    public boolean isInductorEngaged() {
+        // TurbineLogic.update() 同时检查 TurbineData 字段和接口方法，两处都返回 true 确保接合
+        return true;
+    }
 
     @Override
     public boolean isSimulator() {
