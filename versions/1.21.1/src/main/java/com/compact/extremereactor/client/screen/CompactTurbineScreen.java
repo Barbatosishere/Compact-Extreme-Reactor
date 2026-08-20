@@ -4,7 +4,6 @@ import com.compact.extremereactor.common.menu.CompactTurbineMenu;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.player.Inventory;
 
 /**
@@ -15,29 +14,29 @@ import net.minecraft.world.entity.player.Inventory;
  */
 public class CompactTurbineScreen extends AbstractContainerScreen<CompactTurbineMenu> {
 
-    private static final ResourceLocation BACKGROUND = ResourceLocation.fromNamespaceAndPath(
-            "bigreactors", "textures/gui/multiblock/basic_background.png");
+    private static final int BG_COLOR = 0xFF333333;
 
     public CompactTurbineScreen(CompactTurbineMenu menu, Inventory playerInventory, Component title) {
         super(menu, playerInventory, title);
         this.imageWidth = 176;
-        this.imageHeight = 166;
+        this.imageHeight = 80;
     }
 
     @Override
     protected void renderBg(GuiGraphics guiGraphics, float partialTick, int mouseX, int mouseY) {
-        guiGraphics.blit(BACKGROUND, this.leftPos, this.topPos, 0, 0, this.imageWidth, this.imageHeight, 256, 256);
+        // 背景（纯色面板，不依赖 ER 纹理）
+        guiGraphics.fill(this.leftPos, this.topPos, this.leftPos + this.imageWidth, this.topPos + this.imageHeight, BG_COLOR);
 
         // 能量条（右上，竖直）
         this.renderVerticalBar(guiGraphics, this.leftPos + 152, this.topPos + 17, 16, 60,
                 this.menu.getData(CompactTurbineMenu.DATA_ENERGY),
                 this.menu.getData(CompactTurbineMenu.DATA_ENERGY_CAPACITY), 0xFFE8B000);
         // 蒸汽条（水平，淡蓝）
-        this.renderHorizontalBar(guiGraphics, this.leftPos + 8, this.topPos + 17, 80, 8,
+        this.renderHorizontalBar(guiGraphics, this.leftPos + 8, this.topPos + 25, 80, 8,
                 this.menu.getData(CompactTurbineMenu.DATA_STEAM),
                 this.menu.getData(CompactTurbineMenu.DATA_FLUID_CAPACITY), 0xFFB0D0E0);
         // 冷凝水条（水平，深蓝）
-        this.renderHorizontalBar(guiGraphics, this.leftPos + 8, this.topPos + 27, 80, 8,
+        this.renderHorizontalBar(guiGraphics, this.leftPos + 8, this.topPos + 45, 80, 8,
                 this.menu.getData(CompactTurbineMenu.DATA_WATER),
                 this.menu.getData(CompactTurbineMenu.DATA_FLUID_CAPACITY), 0xFF2050A0);
     }
@@ -66,18 +65,18 @@ public class CompactTurbineScreen extends AbstractContainerScreen<CompactTurbine
         guiGraphics.drawString(this.font,
                 Component.translatable("gui.compactextremereactor.power",
                         this.menu.getData(CompactTurbineMenu.DATA_POWER)),
-                8, 47, 0xFFFFFF);
+                8, 5, 0xFFFFFF);
         guiGraphics.drawString(this.font,
                 Component.translatable("gui.compactextremereactor.steam",
                         this.menu.getData(CompactTurbineMenu.DATA_STEAM)),
-                8, 57, 0xFFFFFF);
+                8, 15, 0xFFFFFF);
         guiGraphics.drawString(this.font,
                 Component.translatable("gui.compactextremereactor.water",
                         this.menu.getData(CompactTurbineMenu.DATA_WATER)),
-                8, 67, 0xFFFFFF);
+                8, 35, 0xFFFFFF);
         guiGraphics.drawString(this.font,
                 Component.translatable("gui.compactextremereactor.energy",
                         this.menu.getData(CompactTurbineMenu.DATA_ENERGY)),
-                116, 24, 0xFFFFFF);
+                116, 8, 0xFFFFFF);
     }
 }
