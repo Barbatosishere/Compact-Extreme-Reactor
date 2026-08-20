@@ -133,6 +133,10 @@ public class CompactReactorController extends MultiblockReactor implements IComp
      */
     @Override
     protected boolean updateServer() {
+        // 非激活状态时跳过整个模拟 tick，防止 ReactorLogic 继续消耗燃料/产热/产蒸汽
+        if (!this.isMachineActive()) {
+            return false;
+        }
         if (this.isMachineActive()) {
             final double reactorHeat = this.getReactorHeat().getAsDouble();
             final double dT = reactorHeat - IHeatEntity.AMBIENT_HEAT;
