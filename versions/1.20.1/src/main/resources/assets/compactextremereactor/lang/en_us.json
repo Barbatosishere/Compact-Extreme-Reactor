@@ -12,5 +12,7 @@
   "gui.compactextremereactor.energy": "%s FE",
   "gui.compactextremereactor.power": "Power: %s FE/t",
   "gui.compactextremereactor.steam": "Steam: %s",
-  "gui.compactextremereactor.water": "Water: %s"
+  "gui.compactextremereactor.water": "Water: %s",
+  "gui.compactextremereactor.status_on": "Running",
+  "gui.compactextremereactor.status_off": "Stopped"
 }

@@ -12,5 +12,7 @@
   "gui.compactextremereactor.energy": "%s FE",
   "gui.compactextremereactor.power": "发电：%s FE/t",
   "gui.compactextremereactor.steam": "蒸汽：%s",
-  "gui.compactextremereactor.water": "水：%s"
+  "gui.compactextremereactor.water": "水：%s",
+  "gui.compactextremereactor.status_on": "运行中",
+  "gui.compactextremereactor.status_off": "已停止"
 }

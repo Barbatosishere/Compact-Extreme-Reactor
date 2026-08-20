@@ -33,7 +33,8 @@ public class CompactReactorMenu extends AbstractContainerMenu {
     public static final int DATA_FUEL_CAPACITY = 8;
     public static final int DATA_WASTE_CAPACITY = 8; // 废料与燃料共享同一容器容量
     public static final int DATA_CONTROL_ROD = 9;
-    public static final int DATA_COUNT = 10;
+    public static final int DATA_ACTIVE = 10;
+    public static final int DATA_COUNT = 11;
 
     private final ContainerData _data;
 
@@ -114,6 +115,7 @@ public class CompactReactorMenu extends AbstractContainerMenu {
                         case DATA_WASTE -> controller.getWasteAmount();
                         case DATA_FUEL_CAPACITY -> controller.getFuelCapacity();
                         case DATA_CONTROL_ROD -> this._tile.getControlRodInsertionRatio();
+                        case DATA_ACTIVE -> controller.isMachineActive() ? 1 : 0;
                         default -> 0;
                     };
                 }

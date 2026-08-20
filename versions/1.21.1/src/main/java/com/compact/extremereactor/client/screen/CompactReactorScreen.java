@@ -136,6 +136,11 @@ public class CompactReactorScreen extends AbstractContainerScreen<CompactReactor
 
     @Override
     protected void renderLabels(GuiGraphics guiGraphics, int mouseX, int mouseY) {
+        // 开关状态指示（绿色=运行中，红色=已停止）
+        final boolean active = this.menu.getData(CompactReactorMenu.DATA_ACTIVE) == 1;
+        guiGraphics.drawString(this.font,
+                Component.translatable(active ? "gui.compactextremereactor.status_on" : "gui.compactextremereactor.status_off"),
+                8, 28, active ? 0xFF40C040 : 0xFFC04040);
         // 控制棒状态文本
         guiGraphics.drawString(this.font,
                 Component.translatable("gui.compactextremereactor.control_rod",
