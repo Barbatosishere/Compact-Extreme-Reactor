@@ -9,18 +9,16 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ContainerData;
 import net.minecraft.world.inventory.SimpleContainerData;
-import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 import org.jetbrains.annotations.Nullable;
 
 /**
- * 压缩涡轮机容器：无槽位，纯状态显示。
+ * 压缩涡轮机容器：无槽位，纯状态显示（无玩家背包）。
+ * 蒸汽通过流体能力输入（玩家可用流体管道灌入），本容器只负责显示。
  *
  * 数据槽布局（客户端通过 addDataSlots 同步）：
  *   0: posReady 标记  1-3: 方块坐标 X/Y/Z
  *   4: 能量存储  5: 能量容量  6: 蒸汽量  7: 水量  8: 流体总容量
- *
- * 蒸汽通过流体能力输入（玩家可用流体管道灌入），本容器只负责显示。
  */
 public class CompactTurbineMenu extends AbstractContainerMenu {
 
@@ -56,16 +54,6 @@ public class CompactTurbineMenu extends AbstractContainerMenu {
         super(Content.COMPACT_TURBINE_MENU.get(), containerId);
         this._tile = tile;
         this._data = data;
-
-        // 玩家背包（3 行 x 9 列）
-        for (int row = 0; row < 3; row++) {
-            for (int col = 0; col < 9; col++) {
-                this.addSlot(new Slot(playerInventory, col + row * 9 + 9, 8 + col * 18, 84 + row * 18));
-            }
-        }
-        for (int col = 0; col < 9; col++) {
-            this.addSlot(new Slot(playerInventory, col, 8 + col * 18, 142));
-        }
 
         this.addDataSlots(data);
     }

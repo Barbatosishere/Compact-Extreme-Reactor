@@ -7,7 +7,6 @@ import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.player.Inventory;
 import net.neoforged.neoforge.network.PacketDistributor;
 
@@ -15,13 +14,11 @@ import net.neoforged.neoforge.network.PacketDistributor;
  * 压缩极限反应堆 GUI：显示能量/燃料/废物/控制棒状态，并提供控制棒调节、
  * 机器开关与清除废料按钮。
  *
- * 背景复用 ER 的 basic_background 纹理（256x256，取左上 176x166 区域）。
  * 玩家操作通过 {@link ModPackets} 的 C2S 数据包发送到服务端。
  */
 public class CompactReactorScreen extends AbstractContainerScreen<CompactReactorMenu> {
 
-    private static final ResourceLocation BACKGROUND = ResourceLocation.fromNamespaceAndPath(
-            "bigreactors", "textures/gui/multiblock/basic_background.png");
+    private static final int BG_COLOR = 0xFF333333;
 
     // 控制棒调节按钮与动作按钮（初始禁用，等待方块坐标同步完成）
     private Button _minusButton;
@@ -35,7 +32,7 @@ public class CompactReactorScreen extends AbstractContainerScreen<CompactReactor
     public CompactReactorScreen(CompactReactorMenu menu, Inventory playerInventory, Component title) {
         super(menu, playerInventory, title);
         this.imageWidth = 176;
-        this.imageHeight = 166;
+        this.imageHeight = 84;
     }
 
     @Override
@@ -50,7 +47,7 @@ public class CompactReactorScreen extends AbstractContainerScreen<CompactReactor
                         .bounds(this.leftPos + 100, this.topPos + 44, 44, 20).build());
         this._wasteButton = this.addRenderableWidget(
                 Button.builder(Component.translatable("gui.compactextremereactor.void_waste"), b -> this.sendAction(ModPackets.ACTION_VOID_WASTE))
-                        .bounds(this.leftPos + 100, this.topPos + 68, 44, 20).build());
+                        .bounds(this.leftPos + 100, this.topPos + 60, 44, 20).build());
     }
 
     @Override
@@ -102,18 +99,19 @@ public class CompactReactorScreen extends AbstractContainerScreen<CompactReactor
 
     @Override
     protected void renderBg(GuiGraphics guiGraphics, float partialTick, int mouseX, int mouseY) {
-        guiGraphics.blit(BACKGROUND, this.leftPos, this.topPos, 0, 0, this.imageWidth, this.imageHeight, 256, 256);
+        // 背景（纯色面板，不依赖 ER 纹理）
+        guiGraphics.fill(this.leftPos, this.topPos, this.leftPos + this.imageWidth, this.topPos + this.imageHeight, BG_COLOR);
 
         // 能量条（右上，竖直）
         this.renderVerticalBar(guiGraphics, this.leftPos + 152, this.topPos + 17, 16, 60,
                 this.menu.getData(CompactReactorMenu.DATA_ENERGY),
                 this.menu.getData(CompactReactorMenu.DATA_ENERGY_CAPACITY), 0xFFE8B000);
-        // 燃料条（燃料槽下方，水平，青色）
-        this.renderHorizontalBar(guiGraphics, this.leftPos + 8, this.topPos + 57, 80, 8,
+        // 燃料条（水平，青色）
+        this.renderHorizontalBar(guiGraphics, this.leftPos + 8, this.topPos + 54, 80, 8,
                 this.menu.getData(CompactReactorMenu.DATA_FUEL),
                 this.menu.getData(CompactReactorMenu.DATA_FUEL_CAPACITY), 0xFF40C0C0);
         // 废物条（水平，深灰）
-        this.renderHorizontalBar(guiGraphics, this.leftPos + 8, this.topPos + 67, 80, 8,
+        this.renderHorizontalBar(guiGraphics, this.leftPos + 8, this.topPos + 74, 80, 8,
                 this.menu.getData(CompactReactorMenu.DATA_WASTE),
                 this.menu.getData(CompactReactorMenu.DATA_WASTE_CAPACITY), 0xFF707070);
     }
@@ -142,21 +140,21 @@ public class CompactReactorScreen extends AbstractContainerScreen<CompactReactor
         guiGraphics.drawString(this.font,
                 Component.translatable("gui.compactextremereactor.control_rod",
                         this.menu.getData(CompactReactorMenu.DATA_CONTROL_ROD)),
-                80, 8, 0xFFFFFF);
+                80, 5, 0xFFFFFF);
         // 燃料量文本
         guiGraphics.drawString(this.font,
                 Component.translatable("gui.compactextremereactor.fuel",
                         this.menu.getData(CompactReactorMenu.DATA_FUEL)),
-                8, 47, 0xFFFFFF);
+                8, 44, 0xFFFFFF);
         // 废物量文本
         guiGraphics.drawString(this.font,
                 Component.translatable("gui.compactextremereactor.waste",
                         this.menu.getData(CompactReactorMenu.DATA_WASTE)),
-                8, 77, 0xFFFFFF);
+                8, 64, 0xFFFFFF);
         // 能量值文本
         guiGraphics.drawString(this.font,
                 Component.translatable("gui.compactextremereactor.energy",
                         this.menu.getData(CompactReactorMenu.DATA_ENERGY)),
-                116, 24, 0xFFFFFF);
+                116, 8, 0xFFFFFF);
     }
 }
