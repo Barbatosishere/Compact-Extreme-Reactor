@@ -90,7 +90,7 @@ public class CompactReactorBlock extends CompactMachineBlock {
                 }
                 final int productAmount = mapping.getProductAmount();
                 final int sourceAmount = mapping.getSourceAmount();
-                final int availableBatches = Math.min(stack.getCount() / sourceAmount, 64);
+                final int availableBatches = stack.getCount() / sourceAmount;
                 final int requestedBatches = Math.min(availableBatches, Integer.MAX_VALUE / productAmount);
                 final int requestedFuel = requestedBatches * productAmount;
                 final int acceptedFuel = reactor.insertFuel(

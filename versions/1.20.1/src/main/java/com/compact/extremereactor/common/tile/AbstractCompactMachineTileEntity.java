@@ -152,11 +152,11 @@ public abstract class AbstractCompactMachineTileEntity extends BlockEntity {
                 || this._runtimeUnavailable || this._initFailed) {
             return;
         }
-        // 仅 PENDING_INIT 顶层 tick 调用；保留同步保护避免未来新增调用路径并发初始化。
-        synchronized (this) {
-            if (this._controller != null || this._runtimeUnavailable || this._initFailed) {
-                return;
-            }
+        // 方法级 synchronized 持锁期间二次守卫：防御未来重入路径
+        // （如 onControllerInitialized 回调）在半初始化状态下的穿透。
+        if (this._controller != null || this._runtimeUnavailable || this._initFailed) {
+            return;
+        }
         try {
             this._controller = this.createController();
             // 流体脏标记接线：管道 fill/drain 落到 ER FluidContainer 后立即 setChanged，
@@ -195,7 +195,6 @@ public abstract class AbstractCompactMachineTileEntity extends BlockEntity {
             // 保留 snapshot/pending NBT，确保初始化异常不会把已恢复的机器状态写成空数据。
             this.markChangedSafely();
         }
-        } // end synchronized
     }
 
     /**

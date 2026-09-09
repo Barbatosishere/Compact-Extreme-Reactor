@@ -33,10 +33,15 @@ public enum CompactMachineProvider implements IBlockComponentProvider {
         if (data.isEmpty()) {
             return;
         }
-        // 控制器初始化失败：显示"未初始化"红色提示，避免误导显示"已停止"
+        // 控制器初始化失败：红字；仍在排队初始化：黄字（世界加载中的正常过渡态）
         if (!data.getBoolean("Initialized")) {
-            tooltip.add(Component.translatable("gui.compactextremereactor.init_failed")
-                    .withStyle(ChatFormatting.RED));
+            if (data.getBoolean("InitFailed")) {
+                tooltip.add(Component.translatable("gui.compactextremereactor.init_failed")
+                        .withStyle(ChatFormatting.RED));
+            } else {
+                tooltip.add(Component.translatable("gui.compactextremereactor.controller_initializing")
+                        .withStyle(ChatFormatting.YELLOW));
+            }
             return;
         }
 
@@ -122,9 +127,10 @@ public enum CompactMachineProvider implements IBlockComponentProvider {
             if (!(accessor.getBlockEntity() instanceof AbstractCompactMachineTileEntity tile)) {
                 return;
             }
-            // 初始化失败标志：tooltip 据此显示"未初始化"而非误导的"已停止"
+            // 三态区分：初始化失败（红字）与仍在排队初始化（黄字），都不读后续数据
             if (tile.isControllerInitFailed()) {
                 tag.putBoolean("Initialized", false);
+                tag.putBoolean("InitFailed", true);
                 return;
             }
             final ICompactController controller = tile.getController();

@@ -32,6 +32,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed（2026-09-09 全局压测后追加）
 
 - **涡轮机涓流工况冷凝蒸汽丢失（双端）** — ER2 上游 `FluidContainer.onCondensation()` 先 extract 后映射，栈适配器对空栈短路跳过注水 lambda，返回值被 `TurbineLogic` pop 丢弃；低流量每 tick 触发时冷凝水近乎全损。控制器在 `tick()` 前后夹读流体罐，命中特征（消耗>0、蒸汽归零、水量未变、非 VentAll、存在映射）时调用公开的 `condensate(consumed, mapping)` 重放补齐。运行时验证：10000 蒸汽灌入 → 10000 水全额冷凝，涓流/满速/停机/8 机阵列/中途重启场景均守恒。
+- **手持燃料右键注入的 64 批量上限（双端）** — 右键路径硬编码 `Math.min(count/source, 64)`，大堆叠模组燃料需多次右键；移除该上限，与物品能力管道路径的无界批量语义一致（溢出防护由既有 `MAX_VALUE/productAmount` 钳制承担）。
+- **客户端控制棒限流的世界过渡绕过（双端）** — GUI 在 `level` 为 null 的加载/重连过渡期发送控制棒包时，去抖检查被跳过且状态停留哨兵值，单击可连发多条 C2S 包；改为 fail-closed：世界刻不可用时直接不发送。
+- **Jade 提示混淆"初始化中"与"初始化失败"（双端）** — 服务端对两种状态都发 `Initialized=false`，客户端一律显示红色"初始化失败"，误导玩家以为加载中的机器损坏；现区分三态：失败红字、排队初始化黄字（复用既有 `controller_initializing` lang 键）。
+- **`initController()` 冗余双重同步（双端）** — 方法级 `synchronized` 内再嵌套同监视器 `synchronized(this)` 块，可重入无额外保护；移除内层锁块，保留二次守卫 if 并注明其防御目标（重入路径穿透半初始化状态）。
 
 ### Added（2026-09-09 全局压测后追加）
 

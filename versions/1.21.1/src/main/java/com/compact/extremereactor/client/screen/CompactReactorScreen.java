@@ -107,12 +107,15 @@ public class CompactReactorScreen extends AbstractContainerScreen<CompactReactor
             return;
         }
         final long nowTick = this.getClientGameTime();
-        if (nowTick != Long.MIN_VALUE && nowTick == this._lastControlRodSendTick) {
+        if (nowTick == Long.MIN_VALUE) {
+            return; // 世界未就绪（加载/重连过渡期）：fail-closed，不发控制棒包
+        }
+        if (nowTick == this._lastControlRodSendTick) {
             return;
         }
         this._lastControlRodSendTick = nowTick;
         this._localControlRodRatio = Math.clamp(this._localControlRodRatio + delta, 0, 100);
-        this._controlRodPredictionDeadline = nowTick == Long.MIN_VALUE ? Long.MIN_VALUE : nowTick + 10;
+        this._controlRodPredictionDeadline = nowTick + 10;
         PacketDistributor.sendToServer(new ModPackets.ControlRodPayload(pos, delta));
     }
 
