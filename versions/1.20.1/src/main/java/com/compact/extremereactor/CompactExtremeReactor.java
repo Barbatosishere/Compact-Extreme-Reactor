@@ -4,6 +4,7 @@ import com.compact.extremereactor.common.Content;
 import com.compact.extremereactor.common.config.CompactConfig;
 import com.compact.extremereactor.common.network.ModPackets;
 import com.compact.extremereactor.common.tile.AbstractCompactMachineTileEntity;
+import com.compact.extremereactor.common.tile.CompactReactorTileEntity;
 import net.minecraft.core.Direction;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.block.entity.BlockEntity;
@@ -56,12 +57,27 @@ public final class CompactExtremeReactor {
         net.minecraftforge.fml.ModList.get().getModContainerById(MODID)
                 .ifPresent(c -> c.addConfig(new ModConfig(ModConfig.Type.COMMON, CompactConfig.SPEC, c)));
 
+        // 注册全局 ServerTickEvent 处理器，驱动所有压缩机器每 tick 运行
+        //（与 1.21.1 保持一致：用全局事件驱动，避免依赖方块 ticker 的版本差异）
+        AbstractCompactMachineTileEntity.registerServerTickHandler();
+        // 注册玩家登出清理处理器，回收 ModPackets 限速 Map 中的历史玩家条目
+        com.compact.extremereactor.common.network.ModPackets.registerPlayerCleanupHandler();
+
         // 客户端专用初始化（GUI 屏幕注册）
         if (FMLEnvironment.dist.isClient()) {
             modEventBus.addListener(com.compact.extremereactor.client.ClientHandler::registerScreens);
         }
 
-        LOGGER.info("Compact Extreme Reactor initialized");
+        // 打印运行时依赖版本（便于玩家诊断 ER/ZeroCore 升级兼容性问题）
+        // mods.toml 的 [base, 2.x.y) 范围保证 ER 2.5+ 不会加载此 mod，但若版本被绕过（如
+        // 手工编辑 JAR）启动仍会进入，错误消息会指引玩家查看此行日志
+        LOGGER.info("Compact Extreme Reactor initialized. Required dependencies:");
+        net.minecraftforge.fml.ModList.get().getModContainerById("bigreactors").ifPresentOrElse(
+                container -> LOGGER.info("  - bigreactors {}", container.getModInfo().getVersion()),
+                () -> LOGGER.warn("  - bigreactors NOT FOUND (this should be impossible; mandatory dependency)"));
+        net.minecraftforge.fml.ModList.get().getModContainerById("zerocore").ifPresentOrElse(
+                container -> LOGGER.info("  - zerocore {}", container.getModInfo().getVersion()),
+                () -> LOGGER.warn("  - zerocore NOT FOUND (this should be impossible; mandatory dependency)"));
     }
 
     /**
@@ -88,6 +104,19 @@ public final class CompactExtremeReactor {
                             : LazyOptional.empty();
                 }
             });
+            // 反应堆特有：物品能力（管道输入燃料/提取废物）
+            if (tile instanceof CompactReactorTileEntity reactorTile) {
+                event.addCapability(new ResourceLocation(MODID, "item"), new ICapabilityProvider() {
+                    @Override
+                    public <T> LazyOptional<T> getCapability(Capability<T> capability, @Nullable Direction side) {
+                        // 复用 TileEntity 缓存的 LazyOptional 单实例：每次查询新建 LazyOptional
+                        // 会违反 Forge 规范（同一能力返回不同实例、失效通知丢失、缓存方泄漏）
+                        return capability == ForgeCapabilities.ITEM_HANDLER
+                                ? reactorTile.getItemCapability(side).cast()
+                                : LazyOptional.empty();
+                    }
+                });
+            }
         }
     }
 }

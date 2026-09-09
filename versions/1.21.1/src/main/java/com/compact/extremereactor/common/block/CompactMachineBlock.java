@@ -30,14 +30,11 @@ public class CompactMachineBlock extends Block implements EntityBlock {
     @Nullable
     @Override
     public <T extends BlockEntity> BlockEntityTicker<T> getTicker(Level level, BlockState state, BlockEntityType<T> type) {
-        // 服务端 tick：驱动控制器模拟；客户端不做逻辑
-        // 1.21.1 的 addAndRegisterBlockEntity 会调用 updateBlockEntityTicker 来注册此 ticker，
-        // registerAllBlockEntitiesAfterLevelLoad 同样会调用它，因此 setblock 和 chunk 加载路径都有效
-        return level.isClientSide ? null : (lvl, pos, st, be) -> {
-            if (be instanceof AbstractCompactMachineTileEntity machine) {
-                machine.serverTick();
-            }
-        };
+        // 方块 ticker 已弃用：机器 tick 由 AbstractCompactMachineTileEntity 注册的
+        // ServerTickEvent.Post 全局事件统一驱动（见该类的 TICKING_MACHINES）。
+        // 若仍返回非 null ticker，读档（chunk 加载）时 registerAllBlockEntitiesAfterLevelLoad
+        // 会同时注册方块 ticker，导致机器被 tick 两次（双倍发电/燃料消耗）。
+        return null;
     }
 
     @Override

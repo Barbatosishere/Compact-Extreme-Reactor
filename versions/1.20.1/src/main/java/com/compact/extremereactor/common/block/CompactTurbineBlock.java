@@ -8,6 +8,7 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.SimpleMenuProvider;
 import net.minecraft.world.entity.player.Player;
+import net.minecraftforge.fluids.FluidUtil;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
@@ -30,6 +31,9 @@ public class CompactTurbineBlock extends CompactMachineBlock {
     @Override
     public InteractionResult use(BlockState state, Level level, BlockPos pos,
                                  Player player, InteractionHand hand, BlockHitResult hitResult) {
+        if (FluidUtil.interactWithFluidHandler(player, hand, level, pos, hitResult.getDirection())) {
+            return InteractionResult.sidedSuccess(level.isClientSide());
+        }
         if (!level.isClientSide() && level.getBlockEntity(pos) instanceof CompactTurbineTileEntity tile) {
             player.openMenu(new SimpleMenuProvider(
                     (id, inventory, p) -> new CompactTurbineMenu(id, inventory, tile),

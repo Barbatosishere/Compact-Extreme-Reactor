@@ -10,10 +10,10 @@ Place one block and get an entire functional multiblock machine, fully reusing E
 
 ## ✨ Features
 
-- **Compact Reactor** (`compact_reactor`): fuel rods, control rods and power tap counts plus internal size are configurable; power pushed to all 6 adjacent faces each tick (simulated ActivePowerTapFE) with a passive-equivalent FE credit — outputs FE at full simulated capacity (~3.7k FE/t with defaults). Water/steam fluid ports are registered but the steam conversion path is not functional yet (see Known limitations below);
-- **Compact Turbine** (`compact_turbine`): rotor / coil scale defined by the simulated layout and config; steam can be piped in and stored, but the rotor does not generate power yet (ER2's part-based spin-up internals are not simulated — roadmap item);
+- **Compact Reactor** (`compact_reactor`): fuel rods, control rods and power tap counts plus internal size are configurable; power pushed to all 6 adjacent faces each tick (simulated ActivePowerTapFE) with a passive-equivalent FE credit (output varies with core temperature and coolant state; ~0.7k FE/t measured at boiling equilibrium with defaults, higher when running dry). Water piped in via the `IFluidHandler` is vaporized by reactor heat and emitted as steam through the same handler (synchronous fluid path, no FluidPort parts required).
+- **Compact Turbine** (`compact_turbine`): rotor / coil scale defined by the simulated layout and config; steam piped in spins up the rotor, which generates FE and exhausts the spent coolant (water) back through the `IFluidHandler` — full steam→FE→water loop.
 - **Full GUI**: control rod insertion adjustment (−5/+5), machine on/off toggle, void-waste button; live bars for energy / fuel / waste / steam / generated power;
-- **Auto fuel injection**: put a fuel item (e.g. yellorium ingot) into the GUI fuel slot — it is automatically mapped to a `Reactant` and inserted into the fuel container;
+- **Fuel injection**: insert fuel items through the block's item capability (slot 0) or right-click the reactor with them; fluid fuels (such as yellorium/plutonium solutions) and coolant containers use the block's fluid capability;
 - **Save-compatible**: NBT is delegated to the ER controller (`syncDataFrom` / `syncDataTo`), same save format as ER; capacities are recomputed on simulated assembly.
 
 ## ⚙️ How it works
@@ -77,13 +77,12 @@ Artifacts are at `versions/<mc>/build/libs/compactextremereactor-<version>-<Load
 
 1. Place a compact reactor / turbine block (creative tab or crafting);
 2. Right-click to open the GUI:
-   - **Reactor**: put fuel items (yellorium ingot etc.) into the fuel slot for auto-injection; use `−5/+5` to adjust control rods; toggle button to start/stop; void-waste button to dump nuclear waste;
-   - **Turbine**: display-only; feed steam with fluid pipes (e.g. from a reactor's steam output);
+   - **Reactor**: the GUI shows status and controls; insert solid fuel through the block's item capability or right-click with fuel; use fluid containers or pipes for coolant and fluid fuels; use `−5/+5` to adjust control rods; toggle button to start/stop; void-waste button to dump nuclear waste;
+   - **Turbine**: display-only; feed steam with fluid pipes or containers (e.g. from a reactor's steam output), and collect condensed water through the fluid output;
 3. Draw power with energy cables / conduits from any face (all faces are equivalent on a single block).
 
 ## ⚠️ Known limitations
 
-- The compact reactor outputs **FE only** for now — the water→steam conversion and the compact turbine's power generation depend on ER2 part-based internals (vaporization access checks, rotor spin-up) that the single-block simulation does not yet provide. Steam can be piped and stored in the tanks. Steam support is on the roadmap.
 - Forge 1.20.1 dev runs (`runServer`/`runClient`) fail because the bundled ZeroCore/ER2 dependency jars are production (SRG-mapped) builds; production installs are unaffected.
 
 ## ⚙️ Config (`config/compactextremereactor-common.toml`)
@@ -93,7 +92,7 @@ Artifacts are at `versions/<mc>/build/libs/compactextremereactor-<version>-<Load
 | `reactor.fuelRods` | 16 | Simulated fuel rod count (fuel capacity = count × per-rod capacity) |
 | `reactor.controlRods` | 4 | Simulated control rod count |
 | `reactor.powerTaps` | 4 | Simulated power tap count |
-| `reactor.sizeX/Y/Z` | 9 | Simulated reactor size (3–64; energy buffer scales with volume) |
+| `reactor.sizeX/Y/Z` | 9 | Simulated reactor size (3–32; energy/fluid buffers scale with volume) |
 | `turbine.coilRadius` | 3 | Turbine coil radius (1–16) |
 | `turbine.sizeX/Z` | 9 | Simulated turbine size |
 | `turbine.sizeY` | 11 | Turbine shaft height (blades = layers × 4) |

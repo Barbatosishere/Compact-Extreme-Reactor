@@ -63,4 +63,31 @@ public interface ICompactController extends IWideEnergyStorage2 {
     default double getEnergyGeneratedLastTick() {
         return 0;
     }
+
+    /** 反应堆堆芯温度（摄氏度，开氏温标转换后）；非反应堆返回 0。 */
+    default double getReactorTemperatureCelsius() {
+        return 0;
+    }
+
+    /** 涡轮机转子转速（弧度/秒）；非涡轮机返回 0。 */
+    default double getRotorAngularSpeed() {
+        return 0;
+    }
+
+    /** 涡轮机转子最大安全转速（弧度/秒）；非涡轮机返回 0。 */
+    default double getMaxRotorAngularSpeed() {
+        return 0;
+    }
+
+    /**
+     * 注册流体脏标记回调：BypassFluidHandler 每次 fill/drain Execute 成功后调用，
+     * 用于及时触发 TileEntity {@code setChanged()}（流体变更尽快落盘，而不是等
+     * serverTick 的 1 秒兜底保存）。默认无操作。
+     */
+    default void setFluidDirtyCallback(Runnable callback) {
+    }
+
+    /** 释放控制器缓存的外部流体 handler，防止卸载后旧引用访问 detached 容器。 */
+    default void releaseFluidHandlers() {
+    }
 }

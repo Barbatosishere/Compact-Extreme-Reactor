@@ -18,8 +18,8 @@ public class CompactTurbineScreen extends AbstractContainerScreen<CompactTurbine
 
     public CompactTurbineScreen(CompactTurbineMenu menu, Inventory playerInventory, Component title) {
         super(menu, playerInventory, title);
-        this.imageWidth = 176;
-        this.imageHeight = 80;
+        this.imageWidth = 264;
+        this.imageHeight = 120;
     }
 
     @Override
@@ -28,15 +28,15 @@ public class CompactTurbineScreen extends AbstractContainerScreen<CompactTurbine
         guiGraphics.fill(this.leftPos, this.topPos, this.leftPos + this.imageWidth, this.topPos + this.imageHeight, BG_COLOR);
 
         // 能量条（右上，竖直）
-        this.renderVerticalBar(guiGraphics, this.leftPos + 152, this.topPos + 17, 16, 60,
+        this.renderVerticalBar(guiGraphics, this.leftPos + 244, this.topPos + 16, 12, 90,
                 this.menu.getData(CompactTurbineMenu.DATA_ENERGY),
                 this.menu.getData(CompactTurbineMenu.DATA_ENERGY_CAPACITY), 0xFFE8B000);
         // 蒸汽条（水平，淡蓝）
-        this.renderHorizontalBar(guiGraphics, this.leftPos + 8, this.topPos + 25, 80, 8,
+        this.renderHorizontalBar(guiGraphics, this.leftPos + 8, this.topPos + 30, 140, 8,
                 this.menu.getData(CompactTurbineMenu.DATA_STEAM),
                 this.menu.getData(CompactTurbineMenu.DATA_FLUID_CAPACITY), 0xFFB0D0E0);
         // 冷凝水条（水平，深蓝）
-        this.renderHorizontalBar(guiGraphics, this.leftPos + 8, this.topPos + 45, 80, 8,
+        this.renderHorizontalBar(guiGraphics, this.leftPos + 8, this.topPos + 52, 140, 8,
                 this.menu.getData(CompactTurbineMenu.DATA_WATER),
                 this.menu.getData(CompactTurbineMenu.DATA_FLUID_CAPACITY), 0xFF2050A0);
     }
@@ -61,22 +61,42 @@ public class CompactTurbineScreen extends AbstractContainerScreen<CompactTurbine
 
     @Override
     protected void renderLabels(GuiGraphics guiGraphics, int mouseX, int mouseY) {
+        // 控制器初始化失败时，顶部显示红色警告
+        if (this.menu.getData(CompactTurbineMenu.DATA_INIT_FAILED) == 1) {
+            guiGraphics.drawString(this.font,
+                    Component.translatable("gui.compactextremereactor.init_failed"),
+                    8, 4, 0xFFC04040);
+            return;
+        }
+        if (this.menu.getData(CompactTurbineMenu.DATA_CONTROLLER_READY) != 1) {
+            guiGraphics.drawString(this.font,
+                    Component.translatable("gui.compactextremereactor.controller_initializing"),
+                    8, 4, 0xFFE0C040);
+            return;
+        }
         // 发电量与流体量文本
         guiGraphics.drawString(this.font,
                 Component.translatable("gui.compactextremereactor.power",
                         this.menu.getData(CompactTurbineMenu.DATA_POWER)),
-                8, 5, 0xFFFFFF);
+                8, 4, 0xFFFFFF);
+        // 涡轮机转速
+        final int rpmRaw = this.menu.getData(CompactTurbineMenu.DATA_ROTOR_SPEED);
+        final double rpm = rpmRaw / 10.0;
+        final int rpmColor = rpm > 0 ? 0xFFE0C040 : 0xFF808080;
+        guiGraphics.drawString(this.font,
+                Component.translatable("gui.compactextremereactor.rotor_speed", String.format("%.0f", rpm)),
+                90, 4, rpmColor);
         guiGraphics.drawString(this.font,
                 Component.translatable("gui.compactextremereactor.steam",
                         this.menu.getData(CompactTurbineMenu.DATA_STEAM)),
-                8, 15, 0xFFFFFF);
+                8, 20, 0xFFFFFF);
         guiGraphics.drawString(this.font,
                 Component.translatable("gui.compactextremereactor.water",
                         this.menu.getData(CompactTurbineMenu.DATA_WATER)),
-                8, 35, 0xFFFFFF);
+                8, 42, 0xFFFFFF);
         guiGraphics.drawString(this.font,
                 Component.translatable("gui.compactextremereactor.energy",
                         this.menu.getData(CompactTurbineMenu.DATA_ENERGY)),
-                116, 8, 0xFFFFFF);
+                8, 64, 0xFFFFFF);
     }
 }

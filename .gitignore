@@ -21,8 +21,16 @@ versions/*/libraries/
 versions/*/server.jar
 versions/*/*-installer.jar
 
-# 开发服务器日志
+# 开发服务器日志与诊断产物（RCON 冒烟测试等本地文件）
 server-*.log
+server_run.log
+thread_dump*.txt
+rcon-port.ps1
+
+# 本地实验脚本与 GUI 原型页
+net/
+it/
+*-gui-mockup.html
 
 # 系统文件
 Thumbs.db
@@ -31,3 +39,9 @@ Desktop.ini
 
 # 注意：libs/ 下的 ER/ZeroCore 本地 jar 依赖必须提交，
 # 否则克隆仓库后无法编译（官方 Maven 不可达，见 build.gradle）
+
+# 本地测试日志与浸泡测试结果
+neoforge-*.log
+forge-client.log
+server_run_*.log
+soak-result*.txt
