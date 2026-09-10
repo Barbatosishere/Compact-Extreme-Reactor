@@ -174,7 +174,7 @@ public class CompactReactorItemHandler implements IItemHandler {
         remainder.shrink(acceptedBatches * sourceAmount);
         if (!simulate) {
             final int inserted = reactor.insertFuel(reactant, fuelToInsert, OperationMode.Execute);
-            final int insertedBatches = Math.min(acceptedBatches, inserted / productAmount);
+            final int insertedBatches = Math.min(acceptedBatches, Math.max(0, inserted) / productAmount);
             remainder.setCount(stack.getCount() - insertedBatches * sourceAmount);
             if (insertedBatches > 0) {
                 this._tile.setChanged();
