@@ -45,7 +45,7 @@ public final class CompactReactorFluidHandler implements IFluidHandler {
 
     @Override
     public int getTanks() {
-        return this._released ? 0 : this._coolant.getTanks() + this._vapor.getTanks() + 1;
+        return this._released ? 0 : this._coolant.getTanks() + this._vapor.getTanks() + 2;
     }
 
     @Override
@@ -55,7 +55,8 @@ public final class CompactReactorFluidHandler implements IFluidHandler {
         tank -= this._coolant.getTanks();
         if (tank < this._vapor.getTanks()) return this._vapor.getFluidInTank(tank);
         tank -= this._vapor.getTanks();
-        return tank == 0 ? this.fuelFluid() : FluidStack.EMPTY;
+        if (tank == 0) return this.fuelFluid();
+        return tank == 1 ? this.wasteFluid() : FluidStack.EMPTY;
     }
 
     @Override
@@ -65,7 +66,8 @@ public final class CompactReactorFluidHandler implements IFluidHandler {
         tank -= this._coolant.getTanks();
         if (tank < this._vapor.getTanks()) return this._vapor.getTankCapacity(tank);
         tank -= this._vapor.getTanks();
-        return tank == 0 ? this.fuelFluidCapacity() : 0;
+        if (tank == 0) return this.fuelFluidCapacity();
+        return tank == 1 ? this.wasteFluidCapacity() : 0;
     }
 
     @Override
@@ -124,12 +126,20 @@ public final class CompactReactorFluidHandler implements IFluidHandler {
 
     @Override
     public @NotNull FluidStack drain(FluidStack resource, FluidAction action) {
-        return this._released ? FluidStack.EMPTY : this._vapor.drain(resource, action);
+        if (this._released || resource.isEmpty()) return FluidStack.EMPTY;
+        final FluidStack vapor = this._vapor.drain(resource, action);
+        if (!vapor.isEmpty()) return vapor;
+        final FluidStack waste = this.wasteFluid();
+        if (waste.isEmpty() || waste.getFluid() != resource.getFluid()) return FluidStack.EMPTY;
+        return this.drainWaste(resource.getAmount(), action);
     }
 
     @Override
     public @NotNull FluidStack drain(int maxDrain, FluidAction action) {
-        return this._released ? FluidStack.EMPTY : this._vapor.drain(maxDrain, action);
+        if (this._released || maxDrain <= 0) return FluidStack.EMPTY;
+        final FluidStack vapor = this._vapor.drain(maxDrain, action);
+        if (!vapor.isEmpty()) return vapor;
+        return this.drainWaste(maxDrain, action);
     }
 
     private Optional<IMapping<TagKey<Fluid>, Reactant>> fuelMapping(FluidStack stack) {
@@ -167,6 +177,53 @@ public final class CompactReactorFluidHandler implements IFluidHandler {
                         .flatMap(list -> list.stream()
                                 .filter(CompactReactorFluidHandler::isValidMapping)
                                 .findFirst()));
+    }
+
+    /** 当前废料 Reactant 对应的流体视图（如流体燃料烧出的赤锶），供管道抽取。 */
+    private FluidStack wasteFluid() {
+        final int wasteAmount = this._reactor.getWasteAmount();
+        if (wasteAmount <= 0) return FluidStack.EMPTY;
+        return this.currentWasteFluidMapping()
+                .map(mapping -> ReactantMappingsRegistry.getFluidStackFrom(mapping,
+                        mappedProductAmount(mapping, wasteAmount)))
+                .orElse(FluidStack.EMPTY);
+    }
+
+    private int wasteFluidCapacity() {
+        final int capacity = Math.max(0, this._reactor.getFuelCapacity());
+        if (capacity == 0) return 0;
+        return this.currentWasteFluidMapping()
+                .map(mapping -> mappedProductAmount(mapping, capacity))
+                .orElse(0);
+    }
+
+    private Optional<IMapping<Reactant, TagKey<Fluid>>> currentWasteFluidMapping() {
+        final Reactant waste = this._reactor.getWasteReactant();
+        if (waste == null) return Optional.empty();
+        return ReactantMappingsRegistry.getToFluid(waste)
+                .flatMap(list -> list.stream()
+                        .filter(CompactReactorFluidHandler::isValidMapping)
+                        .findFirst());
+    }
+
+    /** 从反应堆抽出废液：按映射把请求的流体量换算为废料 Reactant 量后移除。 */
+    private FluidStack drainWaste(int maxFluid, FluidAction action) {
+        final Optional<IMapping<Reactant, TagKey<Fluid>>> mappingOpt = this.currentWasteFluidMapping();
+        if (mappingOpt.isEmpty() || maxFluid <= 0) return FluidStack.EMPTY;
+        final IMapping<Reactant, TagKey<Fluid>> mapping = mappingOpt.get();
+        final int productAmount = mapping.getProductAmount();
+        final int sourceAmount = mapping.getSourceAmount();
+        final int wasteAmount = this._reactor.getWasteAmount();
+        final int batches = Math.min(maxFluid / productAmount, wasteAmount / sourceAmount);
+        if (batches <= 0) return FluidStack.EMPTY;
+        if (action == FluidAction.EXECUTE) {
+            final int removed = this._reactor.voidWaste(batches * sourceAmount);
+            final int removedBatches = Math.min(batches, Math.max(0, removed) / sourceAmount);
+            if (removedBatches <= 0) return FluidStack.EMPTY;
+            if (this._dirtyCallback != null) this._dirtyCallback.run();
+            return ReactantMappingsRegistry.getFluidStackFrom(mapping, removedBatches * productAmount);
+        }
+        return ReactantMappingsRegistry.getFluidStackFrom(mapping, batches * productAmount);
     }
 
     private static boolean isValidMapping(IMapping<?, ?> mapping) {
