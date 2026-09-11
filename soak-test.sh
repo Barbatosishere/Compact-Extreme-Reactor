@@ -96,20 +96,33 @@ check "P4 守恒破坏次数" 0 "$VIOL"
 FW="$(TANK "$SPARE" 1)"; FS="$(TANK "$SPARE" 0)"
 check "P4 全程总守恒 I-D==S+W" "$((I - D))" "$((FW + FS))"
 
-echo "===== P5 反应堆水→蒸汽浸泡 x10（不变量 I4） ====="
+echo "===== P5 反应堆水→蒸汽浸泡 x10（不变量 I4'：0.85 产出律 + 无中生有防护 + 排空完备） ====="
+# 旧断言（产出 4200~4250）是"热耗尽指纹"，依赖燃料纯度/堆芯热状态：新燃料高纯度时
+# 8s 可把 5000 水全部汽化，退化燃料+低堆芯热时只能产出 ~800（均为上游合法热力学）。
+# 状态无关的 mod/上游不变量（字节码 FluidContainer.vaporize 确认）：
+#   a) 无中生有防护：蒸汽增量 <= 灌入水量
+#   b) 0.85 产出律：蒸汽增量 == 0.85 × 实际消耗水量（每 tick floor 舍入，容差 200 > 160 tick）
+#   c) 排空完备：drain 200000 后水/汽双罐归零
 VIOL=0
 for i in $(seq 1 10); do
-    G0="$(TANK "$REAC" 1)"
+    RCON "cerdev drain $REAC 200000" > /dev/null   # 预排空，保证 5000 水全额接受
+    sleep 1
+    G0="$(TANK "$REAC" 1)"; W0="$(TANK "$REAC" 0)"
     RCON "cerdev fill $REAC minecraft:water 5000" > /dev/null
     sleep 8
-    G1="$(TANK "$REAC" 1)"
+    G1="$(TANK "$REAC" 1)"; W1="$(TANK "$REAC" 0)"
     RCON "cerdev drain $REAC 200000" > /dev/null
-    D="$((G1 - G0))"
-    if [ "$D" -gt 4250 ] || [ "$D" -lt 4200 ]; then
-        VIOL=$((VIOL+1)); echo "  第 $i 轮蒸汽产出异常: $D (期望 4200~4250)"
-    fi
+    G2="$(TANK "$REAC" 1)"; W2="$(TANK "$REAC" 0)"
+    D=$((G1 - G0))            # 蒸汽增量
+    C=$((W0 + 5000 - W1))     # 实际消耗水量
+    BAD=""
+    [ "$D" -gt 5000 ] && BAD="无中生有 D=$D>5000"
+    LAW="$(awk -v c="$C" -v d="$D" 'BEGIN{lo=0.85*c-200; hi=0.85*c+1; print (d>=lo && d<=hi) ? "ok" : "bad"}')"
+    [ "$LAW" == "ok" ] || BAD="$BAD 0.85律破坏 D=$D C=$C"
+    { [ "$G2" != "0" ] || [ "$W2" != "0" ]; } && BAD="$BAD 排空不完备 G2=$G2 W2=$W2"
+    if [ -n "$BAD" ]; then VIOL=$((VIOL+1)); echo "  第 $i 轮: $BAD"; fi
 done
-check "P5 产出异常次数" 0 "$VIOL"
+check "P5 违规次数" 0 "$VIOL"
 
 echo "===== P6 TPS 终测 ====="
 T0="$(RCON "time query gametime" | sed -n 2p | grep -oE '[0-9]+')"
