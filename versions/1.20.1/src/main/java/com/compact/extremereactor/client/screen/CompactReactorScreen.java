@@ -7,17 +7,18 @@ import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.player.Inventory;
 
 /**
- * 压缩极限反应堆 GUI：显示能量/燃料/废物/控制棒状态，并提供控制棒调节、
+ * 压缩极限反应堆 GUI：显示能量/燃料/废料/控制棒状态，并提供控制棒调节、
  * 机器开关与清除废料按钮。
  *
  * 玩家操作通过 {@link ModPackets} 的 C2S 数据包发送到服务端。
  */
 public class CompactReactorScreen extends AbstractContainerScreen<CompactReactorMenu> {
 
-    private static final int BG_COLOR = 0xFF333333;
+    private static final ResourceLocation TEXTURE = new ResourceLocation("compactextremereactor", "textures/gui/compact_reactor.png");
 
     // 控制棒调节按钮与动作按钮（初始禁用，等待方块坐标同步完成）
     private Button _minusButton;
@@ -33,8 +34,8 @@ public class CompactReactorScreen extends AbstractContainerScreen<CompactReactor
 
     public CompactReactorScreen(CompactReactorMenu menu, Inventory playerInventory, Component title) {
         super(menu, playerInventory, title);
-        this.imageWidth = 264;
-        this.imageHeight = 126;
+        this.imageWidth = 320;
+        this.imageHeight = 180;
     }
 
     @Override
@@ -42,15 +43,15 @@ public class CompactReactorScreen extends AbstractContainerScreen<CompactReactor
         super.init();
         // 控制棒按钮：右侧，与控制棒文字对齐
         this._minusButton = this.addRenderableWidget(Button.builder(Component.translatable("gui.compactextremereactor.control_rod_minus"), b -> this.adjustControlRod(-5))
-                .bounds(this.leftPos + 170, this.topPos + 40, 22, 18).build());
+                .bounds(this.leftPos + 196, this.topPos + 68, 42, 20).build());
         this._plusButton = this.addRenderableWidget(Button.builder(Component.translatable("gui.compactextremereactor.control_rod_plus"), b -> this.adjustControlRod(5))
-                .bounds(this.leftPos + 196, this.topPos + 40, 22, 18).build());
+                .bounds(this.leftPos + 244, this.topPos + 68, 42, 20).build());
         this._toggleButton = this.addRenderableWidget(
                 Button.builder(Component.translatable("gui.compactextremereactor.toggle"), b -> this.sendAction(ModPackets.ACTION_TOGGLE_ACTIVE))
-                        .bounds(this.leftPos + 170, this.topPos + 66, 52, 20).build());
+                        .bounds(this.leftPos + 204, this.topPos + 38, 82, 20).build());
         this._wasteButton = this.addRenderableWidget(
                 Button.builder(Component.translatable("gui.compactextremereactor.void_waste"), b -> this.sendAction(ModPackets.ACTION_VOID_WASTE))
-                        .bounds(this.leftPos + 170, this.topPos + 90, 52, 20).build());
+                        .bounds(this.leftPos + 204, this.topPos + 128, 82, 20).build());
         this._minusButton.active = false;
         this._plusButton.active = false;
         this._toggleButton.active = false;
@@ -141,94 +142,62 @@ public class CompactReactorScreen extends AbstractContainerScreen<CompactReactor
 
     @Override
     protected void renderBg(GuiGraphics guiGraphics, float partialTick, int mouseX, int mouseY) {
-        // 背景（纯色面板，不依赖 ER 纹理）
-        guiGraphics.fill(this.leftPos, this.topPos, this.leftPos + this.imageWidth, this.topPos + this.imageHeight, BG_COLOR);
-
-        // 能量条（右上，竖直，较长）
-        this.renderVerticalBar(guiGraphics, this.leftPos + 244, this.topPos + 16, 12, 100,
-                this.menu.getData(CompactReactorMenu.DATA_ENERGY),
-                this.menu.getData(CompactReactorMenu.DATA_ENERGY_CAPACITY), 0xFFE8B000);
-        // 燃料条（水平，青色，较宽）
-        this.renderHorizontalBar(guiGraphics, this.leftPos + 8, this.topPos + 70, 140, 8,
-                this.menu.getData(CompactReactorMenu.DATA_FUEL),
-                this.menu.getData(CompactReactorMenu.DATA_FUEL_CAPACITY), 0xFF40C0C0);
-        // 废物条（水平，深灰，较宽）——分母用燃料容量（废料与燃料共享同一容器）
-        this.renderHorizontalBar(guiGraphics, this.leftPos + 8, this.topPos + 98, 140, 8,
-                this.menu.getData(CompactReactorMenu.DATA_WASTE),
-                this.menu.getData(CompactReactorMenu.DATA_FUEL_CAPACITY), 0xFF707070);
+        guiGraphics.blit(
+                TEXTURE, this.leftPos, this.topPos, 0, 0, this.imageWidth, this.imageHeight, 512, 256);
+        this.renderHorizontalBar(guiGraphics, this.leftPos + 14, this.topPos + 112, 272, 10, this.menu.getData(CompactReactorMenu.DATA_FUEL), this.menu.getData(CompactReactorMenu.DATA_FUEL_CAPACITY), 0xFFB4D85A);
+        this.renderHorizontalBar(guiGraphics, this.leftPos + 14, this.topPos + 140, 174, 10, this.menu.getData(CompactReactorMenu.DATA_WASTE), this.menu.getData(CompactReactorMenu.DATA_FUEL_CAPACITY), 0xFFAD9164);
+        this.renderVerticalBar(guiGraphics, this.leftPos + 300, this.topPos + 14, 10, 138, this.menu.getData(CompactReactorMenu.DATA_ENERGY), this.menu.getData(CompactReactorMenu.DATA_ENERGY_CAPACITY), 0xFFE7B95B);
     }
 
-    /** 绘制一个带黑色边框、按比例竖直填充的条（从下往上）。 */
-    private void renderVerticalBar(GuiGraphics guiGraphics, int x, int y, int width, int height, int value, int capacity, int color) {
-        guiGraphics.fill(x, y, x + width, y + height, 0xFF000000);
+    private void renderVerticalBar(GuiGraphics g, int x, int y, int width, int height, int value, int capacity, int color) {
+        g.fill(x, y, x + width, y + height, 0xFF52616C);
+        g.fill(x + 1, y + 1, x + width - 1, y + height - 1, 0xFF0D151D);
         if (capacity > 0 && value > 0) {
-            final int filled = Math.min(height - 2, (int)((long)(height - 2) * value / capacity));
-            guiGraphics.fill(x + 1, y + height - 1 - filled, x + width - 1, y + height - 1, color);
+            int filled = Math.min(height - 2, (int) ((long) (height - 2) * value / capacity));
+            g.fill(x + 1, y + height - 1 - filled, x + width - 1, y + height - 1, color);
         }
+        g.fill(x + 1, y + 1, x + width - 1, y + 2, 0x66FFFFFF);
     }
 
-    /** 绘制一个带黑色边框、按比例水平填充的条（从左往右）。 */
-    private void renderHorizontalBar(GuiGraphics guiGraphics, int x, int y, int width, int height, int value, int capacity, int color) {
-        guiGraphics.fill(x, y, x + width, y + height, 0xFF000000);
+    private void renderHorizontalBar(GuiGraphics g, int x, int y, int width, int height, int value, int capacity, int color) {
+        g.fill(x, y, x + width, y + height, 0xFF52616C);
+        g.fill(x + 1, y + 1, x + width - 1, y + height - 1, 0xFF0D151D);
         if (capacity > 0 && value > 0) {
-            final int filled = Math.min(width - 2, (int)((long)(width - 2) * value / capacity));
-            guiGraphics.fill(x + 1, y + 1, x + 1 + filled, y + height - 1, color);
+            int filled = Math.min(width - 2, (int) ((long) (width - 2) * value / capacity));
+            g.fill(x + 1, y + 1, x + 1 + filled, y + height - 1, color);
         }
+        g.fill(x + 1, y + 1, x + width - 1, y + 2, 0x66FFFFFF);
     }
-
     @Override
     protected void renderLabels(GuiGraphics guiGraphics, int mouseX, int mouseY) {
-        // 控制器初始化失败时，顶部显示红色警告（让玩家立刻知道机器不可用）
         if (this.menu.getData(CompactReactorMenu.DATA_INIT_FAILED) == 1) {
-            guiGraphics.drawString(this.font,
-                    Component.translatable("gui.compactextremereactor.init_failed"),
-                    8, 4, 0xFFC04040);
+            this.drawFit(guiGraphics, Component.translatable("gui.compactextremereactor.init_failed"), 14, 14, 272, 0xFFFF6B6B);
             return;
         }
         if (this.menu.getData(CompactReactorMenu.DATA_CONTROLLER_READY) != 1) {
-            guiGraphics.drawString(this.font,
-                    Component.translatable("gui.compactextremereactor.controller_initializing"),
-                    8, 4, 0xFFE0C040);
+            this.drawFit(guiGraphics, Component.translatable("gui.compactextremereactor.controller_initializing"), 14, 14, 272, 0xFFFFD166);
             return;
         }
-        // 发电量（FE/t）
-        guiGraphics.drawString(this.font,
-                Component.translatable("gui.compactextremereactor.power",
-                        this.menu.getData(CompactReactorMenu.DATA_POWER)),
-                8, 4, 0xFFFFFF);
-        // 反应堆堆芯温度：> 500°C 黄、> 800°C 红（与 ER 默认 overheat 阈值一致）
-        final int heatRaw = this.menu.getData(CompactReactorMenu.DATA_REACTOR_HEAT);
-        final double heatC = heatRaw / 10.0;
-        final int heatColor = heatC > 800 ? 0xFFC04040 : (heatC > 500 ? 0xFFE0C040 : 0xFF60D0D0);
-        guiGraphics.drawString(this.font,
-                Component.translatable("gui.compactextremereactor.heat", String.format("%.0f", heatC)),
-                90, 4, heatColor);
-        // 开关状态指示（绿色=运行中，红色=已停止）
-        final boolean active = this.menu.getData(CompactReactorMenu.DATA_ACTIVE) == 1;
-        guiGraphics.drawString(this.font,
-                Component.translatable(active ? "gui.compactextremereactor.status_on" : "gui.compactextremereactor.status_off"),
-                8, 22, active ? 0xFF40C040 : 0xFFC04040);
-        // 控制棒状态文本
-        guiGraphics.drawString(this.font,
-                Component.translatable("gui.compactextremereactor.control_rod",
-                        this._localRatioInitialized
-                                ? this._localControlRodRatio
-                                : this.menu.getData(CompactReactorMenu.DATA_CONTROL_ROD)),
-                8, 40, 0xFFFFFF);
-        // 燃料量文本
-        guiGraphics.drawString(this.font,
-                Component.translatable("gui.compactextremereactor.fuel",
-                        this.menu.getData(CompactReactorMenu.DATA_FUEL)),
-                8, 60, 0xFFFFFF);
-        // 废物量文本
-        guiGraphics.drawString(this.font,
-                Component.translatable("gui.compactextremereactor.waste",
-                        this.menu.getData(CompactReactorMenu.DATA_WASTE)),
-                8, 88, 0xFFFFFF);
-        // 能量值文本
-        guiGraphics.drawString(this.font,
-                Component.translatable("gui.compactextremereactor.energy",
-                        this.menu.getData(CompactReactorMenu.DATA_ENERGY)),
-                8, 116, 0xFFFFFF);
+        this.drawFit(guiGraphics, Component.translatable("gui.compactextremereactor.power", this.menu.getData(CompactReactorMenu.DATA_POWER)), 14, 14, 150, 0xFFFFFFFF);
+        double heat = this.menu.getData(CompactReactorMenu.DATA_REACTOR_HEAT) / 10.0;
+        int heatColor = heat > 800 ? 0xFFFF6B6B : heat > 500 ? 0xFFFFD166 : 0xFF70D6D0;
+        this.drawFit(
+                guiGraphics,
+                Component.translatable("gui.compactextremereactor.heat", String.format("%.0f", heat)),
+                174,
+                14,
+                112,
+                heatColor);
+        boolean active = this.menu.getData(CompactReactorMenu.DATA_ACTIVE) == 1;
+        this.drawFit(guiGraphics, Component.translatable(active ? "gui.compactextremereactor.status_on" : "gui.compactextremereactor.status_off"), 14, 44, 174, active ? 0xFF70D6A0 : 0xFFFF6B6B);
+        int rod = this._localRatioInitialized ? this._localControlRodRatio : this.menu.getData(CompactReactorMenu.DATA_CONTROL_ROD);
+        this.drawFit(guiGraphics, Component.translatable("gui.compactextremereactor.control_rod", rod), 14, 74, 174, 0xFFFFFFFF);
+        this.drawFit(guiGraphics, Component.translatable("gui.compactextremereactor.fuel", this.menu.getData(CompactReactorMenu.DATA_FUEL)), 14, 100, 272, 0xFFB4D85A);
+        this.drawFit(guiGraphics, Component.translatable("gui.compactextremereactor.waste", this.menu.getData(CompactReactorMenu.DATA_WASTE)), 14, 128, 174, 0xFFAD9164);
+        this.drawFit(guiGraphics, Component.translatable("gui.compactextremereactor.energy", this.menu.getData(CompactReactorMenu.DATA_ENERGY)), 14, 164, 272, 0xFFE7B95B);
+    }
+
+    private void drawFit(GuiGraphics guiGraphics, Component text, int x, int y, int maxWidth, int color) {
+        guiGraphics.drawString(this.font, this.font.plainSubstrByWidth(text.getString(), maxWidth), x, y, color);
     }
 }
