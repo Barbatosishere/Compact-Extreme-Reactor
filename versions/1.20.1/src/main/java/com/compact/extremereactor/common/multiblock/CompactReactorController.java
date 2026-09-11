@@ -1,16 +1,23 @@
 package com.compact.extremereactor.common.multiblock;
 
+import com.compact.extremereactor.CompactExtremeReactor;
+import com.compact.extremereactor.common.capability.BypassFluidHandler;
 import it.zerono.mods.extremereactors.api.reactor.IHeatEntity;
 import it.zerono.mods.extremereactors.api.reactor.Reactant;
+import it.zerono.mods.extremereactors.api.reactor.radiation.EnergyConversion;
 import it.zerono.mods.extremereactors.api.reactor.radiation.IRadiationModerator;
 import it.zerono.mods.extremereactors.config.Config;
+import it.zerono.mods.extremereactors.gamecontent.multiblock.common.FluidContainer;
+import it.zerono.mods.extremereactors.gamecontent.multiblock.common.FluidType;
 import it.zerono.mods.extremereactors.gamecontent.multiblock.reactor.FuelContainer;
+import it.zerono.mods.extremereactors.gamecontent.multiblock.reactor.IHeat;
 import it.zerono.mods.extremereactors.gamecontent.multiblock.reactor.IIrradiationSource;
 import it.zerono.mods.extremereactors.gamecontent.multiblock.reactor.IReactorPartType;
 import it.zerono.mods.extremereactors.gamecontent.multiblock.reactor.MultiblockReactor;
 import it.zerono.mods.extremereactors.gamecontent.multiblock.reactor.OperationalMode;
 import it.zerono.mods.extremereactors.gamecontent.multiblock.reactor.ReactorPartType;
 import it.zerono.mods.extremereactors.gamecontent.multiblock.reactor.variant.ReactorVariant;
+import it.zerono.mods.zerocore.lib.data.IoDirection;
 import it.zerono.mods.zerocore.lib.data.WideAmount;
 import it.zerono.mods.zerocore.lib.data.geometry.CuboidBoundingBox;
 import it.zerono.mods.zerocore.lib.data.nbt.ISyncableEntity;
@@ -20,6 +27,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.world.level.Level;
+import net.minecraftforge.fluids.capability.IFluidHandler;
 
 import java.util.List;
 import java.util.Optional;
@@ -54,6 +62,32 @@ public class CompactReactorController extends MultiblockReactor implements IComp
     private static final IRadiationModerator NOOP_MODERATOR = (data, packet) -> {
     };
 
+    /** 控制棒插入比例 NBT key（用于存档持久化自定义字段）。加 {@code cer:} 前缀避免与 ER 内部 key 冲突。 */
+    public static final String NBT_KEY_CONTROL_ROD_RATIO = "cer:controlRodInsertionRatio";
+
+    /**
+     * 旧版本（beta16 之前）使用的无前缀 NBT key。读档时同时识别旧/新 key，
+     * 写时只用新 key。玩家升级 mod 后旧存档可平滑迁移，无需 NBT 编辑。
+     */
+    private static final String LEGACY_NBT_KEY_CONTROL_ROD_RATIO = "ControlRodInsertionRatio";
+
+    /**
+     * 基类私有字段 {@code _boundingBox} 的反射引用（静态缓存，避免每次
+     * recalculateCoords() 都执行 getDeclaredField）。ZeroCore 升级若改名会在此
+     * 抛异常并中止 mod 加载（fail-fast），比运行时静默失败更易发现。
+     */
+    private static final java.lang.reflect.Field BOUNDING_BOX_FIELD;
+
+    static {
+        try {
+            BOUNDING_BOX_FIELD = it.zerono.mods.zerocore.lib.multiblock.AbstractMultiblockController.class
+                    .getDeclaredField("_boundingBox");
+            BOUNDING_BOX_FIELD.setAccessible(true);
+        } catch (NoSuchFieldException e) {
+            throw new IllegalStateException("无法找到 AbstractMultiblockController._boundingBox 字段（ZeroCore 升级？）", e);
+        }
+    }
+
     /** ReactorLogic 被动分支常量（被动冷却的传热/输出效率）。 */
     private static final double PASSIVE_COOLING_TRANSFER_EFFICIENCY = 0.2d;
     private static final double PASSIVE_COOLING_POWER_EFFICIENCY = 0.5d;
@@ -66,15 +100,43 @@ public class CompactReactorController extends MultiblockReactor implements IComp
     private final int _sizeY;
     private final int _sizeZ;
 
+    /** 模拟边界框缓存（尺寸固定不变，避免每次 getBoundingBox() 创建新对象）。 */
+    private final CuboidBoundingBox _cachedBoundingBox;
+
+    /** 缓存的流体旁路处理器（Input/Output 各一个），避免每次 getFluidHandler() 都 new。 */
+    private BypassFluidHandler _cachedInputHandler;
+    private BypassFluidHandler _cachedOutputHandler;
+
+    /** 流体脏标记回调（由 TileEntity 经 setFluidDirtyCallback 注册，fill/drain 后触发 setChanged）。 */
+    private Runnable _fluidDirtyCallback;
+
+    @Override
+    public void setFluidDirtyCallback(Runnable callback) {
+        this._fluidDirtyCallback = callback;
+        if (this._cachedInputHandler != null) {
+            this._cachedInputHandler.setDirtyCallback(callback);
+        }
+        if (this._cachedOutputHandler != null) {
+            this._cachedOutputHandler.setDirtyCallback(callback);
+        }
+    }
+
     /** 模拟控制棒插入比例（0-100），由 GUI 调节。 */
     private byte _controlRodInsertionRatio = 50;
+
+    /** 最近一游戏刻被动等效 FE 补偿量（供 GUI 发电量显示）。 */
+    private double _feGeneratedLastTick;
 
     private final IIrradiationSource _irradiationSource;
 
     public CompactReactorController(Level level, BlockPos anchor,
                                     int fuelRods, int controlRods, int powerTaps,
                                     int sizeX, int sizeY, int sizeZ) {
-        super(level, ReactorVariant.Basic);
+        // 必须用 Reinforced variant：ER2 的 Basic variant 未设置流体参数
+        // （partFluidCapacity=0、maxFluidCapacity=0、vaporGenerationEfficiency=0），
+        // resizeFluidContainer() 会算出流体容量 0 → 水无法注入、汽化量恒为 0，
+        // 即 Basic 是纯被动堆。Reinforced（1000 mB/外壳块，汽化效率 0.85）才有主动冷却。
+        super(level, ReactorVariant.Reinforced);
         this._anchor = anchor.immutable();
         this._fuelRods = fuelRods;
         this._controlRods = controlRods;
@@ -82,6 +144,7 @@ public class CompactReactorController extends MultiblockReactor implements IComp
         this._sizeX = sizeX;
         this._sizeY = sizeY;
         this._sizeZ = sizeZ;
+        this._cachedBoundingBox = new CuboidBoundingBox(this._anchor, this._anchor.offset(sizeX - 1, sizeY - 1, sizeZ - 1));
         this._irradiationSource = new SimulatedIrradiationSource(() -> this._controlRodInsertionRatio, this._anchor);
     }
 
@@ -95,6 +158,74 @@ public class CompactReactorController extends MultiblockReactor implements IComp
         // ER2 发电机缓冲默认 maxInsert=0（原生逻辑只提取不插入），
         // 打开插入限制，使 updateServer() 的被动等效 FE 补偿可以写入
         this.getEnergyBuffer().setMaxInsert(WideAmount.MAX_VALUE);
+        // ZeroCore 2.4.21+ 的 updateMultiblockEntity() 在调用 updateServer() 前会检查
+        // hasChunksAt(_boundingBox)（内部私有字段），而单方块模拟无部件，_boundingBox
+        // 恒为 EMPTY(0,0,0)，在非出生点世界必然检查失败，导致 updateServer() 永不执行。
+        // 覆写 recalculateCoords() 使 _boundingBox 覆盖 anchor 单方块（见下方方法）。
+        this.recalculateCoords();
+    }
+
+    /**
+     * 覆写重算坐标：强制使基类私有字段 {@code _boundingBox} 覆盖压缩方块自身。
+     * 基类实现仅在 {@code _needBuildingBoxRebuild} 为 true 时重建，而该标记只在
+     * 部件变动时置位（单方块模拟无部件，恒为 false）。这里直接反射写入私有字段
+     * 为 anchor 单方块（不走 buildBoundingBox()：单方块模拟无部件可遍历），
+     * 确保 hasChunksAt 检查通过。
+     */
+    @Override
+    public void recalculateCoords() {
+        try {
+            BOUNDING_BOX_FIELD.set(this, new CuboidBoundingBox(this._anchor, this._anchor));
+        } catch (ReflectiveOperationException e) {
+            CompactExtremeReactor.LOGGER.error("无法设置反应堆 _boundingBox @{}", this._anchor, e);
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // 流体端口旁路：绕开 _accessGovernor 与 isActive 前置检查
+    // ------------------------------------------------------------------
+
+    /**
+     * 压缩反应堆无真实 FluidPort 部件。ER 基类 {@code getFluidHandler(IoDirection)}
+     * 会经过 {@code IFluidContainerAccess.getAllowedActionFor()} 检查与（反应堆特有的）
+     * {@code getOperationalMode().isActive()} 前置，无部件时返回受限甚至空的 handler。
+     * 这里直接返回 {@link BypassFluidHandler}，以 Input/Output 方向直读直写 FluidContainer，
+     * 外部管道 fill/drain 立即生效——这是水→蒸汽贯通的唯一修复点。
+     *
+     * 机器关闭时 fill/drain 仍允许（与真实 ER FluidPort 行为一致——水可提前灌入等待启动）；
+     * 关闭状态下灌入的水在启动时由 ReactorLogic 自然蒸发。
+     */
+    @Override
+    public Optional<IFluidHandler> getFluidHandler(IoDirection direction) {
+        // 缓存 BypassFluidHandler：FluidContainer 引用稳定（基类持有的字段在 simulateAssembly 后不变），
+        // 缓存后 fill/drain 状态（_cachedLiquid/_cachedGas）也可复用，避免每次 new。
+        if (direction == IoDirection.Input) {
+            if (this._cachedInputHandler == null) {
+                final FluidContainer container = (FluidContainer) this.getFluidContainer();
+                this._cachedInputHandler = new BypassFluidHandler(container, true, container::getCapacity,
+                        this._fluidDirtyCallback, FluidType.Liquid);
+            }
+            return Optional.of(this._cachedInputHandler);
+        }
+        if (this._cachedOutputHandler == null) {
+            final FluidContainer container = (FluidContainer) this.getFluidContainer();
+            this._cachedOutputHandler = new BypassFluidHandler(container, false, container::getCapacity,
+                        this._fluidDirtyCallback, FluidType.Gas);
+        }
+        return Optional.of(this._cachedOutputHandler);
+    }
+
+    /** 释放缓存的旁路 handler，阻止卸载后的外部引用继续访问旧容器。 */
+    public void releaseFluidHandlers() {
+        if (this._cachedInputHandler != null) {
+            this._cachedInputHandler.release();
+            this._cachedInputHandler = null;
+        }
+        if (this._cachedOutputHandler != null) {
+            this._cachedOutputHandler.release();
+            this._cachedOutputHandler = null;
+        }
+        this._fluidDirtyCallback = null;
     }
 
     /** 每个服务端游戏刻驱动一次反应堆逻辑。 */
@@ -109,6 +240,7 @@ public class CompactReactorController extends MultiblockReactor implements IComp
 
     /** 设置模拟控制棒插入比例（0-100），与真实控制棒语义一致。 */
     public void setControlRodInsertionRatio(int ratio) {
+        // Java 17 没有 Math.clamp(int,int,int)，回退到 max+min
         this._controlRodInsertionRatio = (byte) Math.max(0, Math.min(100, ratio));
     }
 
@@ -133,21 +265,56 @@ public class CompactReactorController extends MultiblockReactor implements IComp
      */
     @Override
     protected boolean updateServer() {
-        if (this.isMachineActive()) {
-            final double reactorHeat = this.getReactorHeat().getAsDouble();
-            final double dT = reactorHeat - IHeatEntity.AMBIENT_HEAT;
-            if (dT > 0.01d) {
-                final double fe = dT * this.getReactorToCoolantSystemHeatTransferCoefficient()
-                        * PASSIVE_COOLING_TRANSFER_EFFICIENCY * PASSIVE_COOLING_POWER_EFFICIENCY
-                        * Config.COMMON.general.powerProductionMultiplier.get()
-                        * Config.COMMON.reactor.reactorPowerProductionMultiplier.get()
-                        * this.getVariant().getEnergyGenerationEfficiency();
-                if (fe > 0.0d) {
-                    this.insertEnergy(EnergySystem.ForgeEnergy, WideAmount.from(fe), OperationMode.Execute);
-                }
+        // 非激活状态时：不消耗燃料/不产热/不产蒸汽/不发电，
+        // 但残余堆温继续向环境温度(20°C)自然消散（复刻 ER performPassiveHeatLoss）
+        if (!this.isMachineActive()) {
+            this._feGeneratedLastTick = 0;
+            this.performPassiveHeatLoss();
+            return false;
+        }
+        // 激活时：先按被动分支同款公式补记等效 FE（温差 × 传热 × 0.2 × 0.5 × 倍率 × 变体效率），
+        // 再让 super.updateServer() 驱动 ReactorLogic 正常运行（产蒸汽 + 辐射 + 热量）
+        this._feGeneratedLastTick = 0;
+        final double reactorHeat = this.getReactorHeat().getAsDouble();
+        final double dT = reactorHeat - IHeatEntity.AMBIENT_HEAT;
+        // 控制棒插入比例因子：0%=全功率(1.0)，100%=停堆(0.0)，匹配 radiate() 中的计算
+        final double controlRodFactor = (100.0 - this._controlRodInsertionRatio) / 100.0;
+        if (dT > 0.01d && controlRodFactor > 0.001d) {
+            final double fe = dT * this.getReactorToCoolantSystemHeatTransferCoefficient()
+                    * PASSIVE_COOLING_TRANSFER_EFFICIENCY * PASSIVE_COOLING_POWER_EFFICIENCY
+                    * Config.COMMON.general.powerProductionMultiplier.get()
+                    * Config.COMMON.reactor.reactorPowerProductionMultiplier.get()
+                    * this.getVariant().getEnergyGenerationEfficiency()
+                    * controlRodFactor;
+            if (fe > 0.0d) {
+                this.insertEnergy(EnergySystem.ForgeEnergy, WideAmount.from(fe), OperationMode.Execute);
+                this._feGeneratedLastTick = fe;
             }
         }
         return super.updateServer();
+    }
+
+    /** 最近一游戏刻被动等效 FE 补偿量（供 GUI 发电量显示）。 */
+    @Override
+    public double getEnergyGeneratedLastTick() {
+        return this._feGeneratedLastTick;
+    }
+
+    /**
+     * 复刻 ER {@link it.zerono.mods.extremereactors.gamecontent.multiblock.reactor.ReactorLogic#performPassiveHeatLoss()}：
+     * 机器关闭后不再产生新热，残余热量按"散热系数 × 温差"逐 tick 向环境温度(20°C)消散。
+     * 散热系数 = 0.001 × 外壳表面积，在 simulateAssembly() → onMachineAssembled() 时初始化。
+     */
+    private void performPassiveHeatLoss() {
+        final IHeat reactorHeat = this.getReactorHeat();
+        final double dT = reactorHeat.getAsDouble() - IHeatEntity.AMBIENT_HEAT;
+        if (dT > 1e-6d) {
+            final double heatToRemove = Math.max(1.0d, dT * this.getReactorHeatLossCoefficient());
+            final double energy = Math.max(0.0d, EnergyConversion.getEnergyFromVolumeAndTemperature(
+                    this.getReactorVolume(), reactorHeat.getAsDouble()) - heatToRemove);
+            reactorHeat.set(EnergyConversion.getTemperatureFromVolumeAndEnergy(
+                    this.getReactorVolume(), energy));
+        }
     }
 
     // ------------------------------------------------------------------
@@ -157,15 +324,20 @@ public class CompactReactorController extends MultiblockReactor implements IComp
     @Override
     public CompoundTag syncDataTo(CompoundTag tag, ISyncableEntity.SyncReason reason) {
         super.syncDataTo(tag, reason);
-        tag.putByte("ControlRodInsertionRatio", this._controlRodInsertionRatio);
+        tag.putByte(NBT_KEY_CONTROL_ROD_RATIO, this._controlRodInsertionRatio);
         return tag;
     }
 
     @Override
     public void syncDataFrom(CompoundTag tag, ISyncableEntity.SyncReason reason) {
         super.syncDataFrom(tag, reason);
-        if (tag.contains("ControlRodInsertionRatio", Tag.TAG_BYTE)) {
-            this._controlRodInsertionRatio = tag.getByte("ControlRodInsertionRatio");
+        // 优先读新 key（cer: 前缀），兼容旧 beta16 之前的无前缀存档
+        // 防御：恶意 NBT 可能写入 -50（byte 范围 -128~127），必须 clamp 到 [0, 100]
+        // 否则 controlRodFactor = (100-(-50))/100 = 1.5，反应堆产生 1.5x 能量，破坏平衡
+        if (tag.contains(NBT_KEY_CONTROL_ROD_RATIO, Tag.TAG_BYTE)) {
+            this._controlRodInsertionRatio = (byte) Math.max(0, Math.min(100, tag.getByte(NBT_KEY_CONTROL_ROD_RATIO)));
+        } else if (tag.contains(LEGACY_NBT_KEY_CONTROL_ROD_RATIO, Tag.TAG_BYTE)) {
+            this._controlRodInsertionRatio = (byte) Math.max(0, Math.min(100, tag.getByte(LEGACY_NBT_KEY_CONTROL_ROD_RATIO)));
         }
         // 旧存档会带出 ER2 发电机的 maxInsert=0（原生从不插入能量），
         // 补偿路径需要插入权限，恢复后强制打开
@@ -180,6 +352,14 @@ public class CompactReactorController extends MultiblockReactor implements IComp
         return 0;
     }
 
+    /** 直接注入核废料（诊断命令构造测试态用），返回实际注入量。 */
+    public int insertWaste(Reactant reactant, int amount) {
+        if (amount > 0 && this.getFuelContainer() instanceof FuelContainer fuel) {
+            return fuel.insertWaste(reactant, amount, OperationMode.Execute);
+        }
+        return 0;
+    }
+
     /** 清除全部核废料，返回清除量（GUI"清除废料"按钮）。 */
     public int voidWaste() {
         if (this.getFuelContainer() instanceof FuelContainer fuel) {
@@ -188,11 +368,28 @@ public class CompactReactorController extends MultiblockReactor implements IComp
         return 0;
     }
 
+    /** 清除指定量的核废料（物品管道提取废物用），返回实际清除量。 */
+    public int voidWaste(int amount) {
+        if (amount > 0 && this.getFuelContainer() instanceof FuelContainer fuel) {
+            return fuel.voidWaste(amount);
+        }
+        return 0;
+    }
+
+    /** 当前核废料的 Reactant 类型；无废物时返回 null。 */
+    public Reactant getWasteReactant() {
+        return this.getFuelContainer() instanceof FuelContainer fuel
+                ? fuel.getWaste().orElse(null)
+                : null;
+    }
+
     @Override
     public int getFuelCapacity() {
         // 燃料容器容量：MultiblockReactor 的无参 getCapacity() 即燃料容量
         //（getCapacity(EnergySystem) 是能量缓冲容量，与燃料容量是两回事）
-        return this.getCapacity();
+        // 截断到 int 上限，防止 GUI 槽位（DATA_FUEL_CAPACITY 是 int）在极端配置下
+        // （如 fuelRods=200 + sizeX*Y*Z=32³）容量超过 2^31-1 导致负数显示
+        return (int) Math.min(this.getCapacity(), Integer.MAX_VALUE);
     }
 
     @Override
@@ -205,6 +402,12 @@ public class CompactReactorController extends MultiblockReactor implements IComp
     public int getWasteAmount() {
         // 当前核废料量
         return this.getFuelContainer() instanceof FuelContainer fuel ? fuel.getWasteAmount() : 0;
+    }
+
+    @Override
+    public double getReactorTemperatureCelsius() {
+        // 反应堆堆芯温度：ER 内部 getReactorHeatValue() 返回 DoubleSupplier（开尔文 → 摄氏度 = K - 273.15）
+        return this.getReactorHeatValue().getAsDouble() - 273.15;
     }
 
     // ------------------------------------------------------------------
@@ -241,7 +444,7 @@ public class CompactReactorController extends MultiblockReactor implements IComp
 
     @Override
     public CuboidBoundingBox getBoundingBox() {
-        return new CuboidBoundingBox(this._anchor, this._anchor.offset(this._sizeX - 1, this._sizeY - 1, this._sizeZ - 1));
+        return this._cachedBoundingBox;
     }
 
     @Override

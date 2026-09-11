@@ -24,7 +24,7 @@ def loaderLabel = platform == 'neoforge' ? 'NeoForge' : 'Forge'
 // Stonecutter 0.8：版本子项目 projectDir = versions/<mc>，因此所有根级路径必须经 rootProject 定位
 def versionedDir = rootProject.file("versions/${mcVersion}")
 
-version = findProperty('mod_version') ?: '1.0.0-beta4'
+version = findProperty('mod_version') ?: '1.0.0-beta17'
 group = findProperty('mod_group_id') ?: 'com.compact.extremereactor'
 
 base {
@@ -34,7 +34,7 @@ base {
 // 统一产物命名：<modid>-<version>-<Loader>-<MC版本>.jar
 // 例：compactextremereactor-1.0.0-beta4-Forge-1.20.1.jar / -NeoForge-1.21.1.jar
 def versionedJarName = "${findProperty('mod_id') ?: 'compactextremereactor'}-" +
-        "${findProperty('mod_version') ?: '1.0.0-beta4'}-" +
+        "${findProperty('mod_version') ?: '1.0.0-beta17'}-" +
         "${loaderLabel}-${mcVersion}.jar"
 tasks.named('jar', Jar) {
     archiveFileName.set(versionedJarName)
@@ -181,6 +181,16 @@ dependencies {
             rootProject.file("libs/ExtremeReactors2-${findProperty('er_version')}.jar"),
             rootProject.file("libs/ZeroCore2-${findProperty('zerocore_version')}.jar")
     )
+    // 可选集成（Jade / JEI）：仅编译期可见，不在运行时/产物中包含
+    // 运行时通过 ModList.isLoaded + 反射加载集成类，缺失时静默跳过
+    if (platform == 'neoforge') {
+        compileOnly files(rootProject.file("libs/Jade-1.21.1-NeoForge-15.10.5.jar"))
+        compileOnly files(rootProject.file("libs/jei-1.21.1-neoforge-19.43.0.393.jar"))
+        compileOnly "org.jetbrains:annotations:24.0.0"
+    } else {
+        compileOnly files(rootProject.file("libs/Jade-1.20.1-Forge-11.13.3.jar"))
+        compileOnly files(rootProject.file("libs/jei-1.20.1-forge-15.49.0.191.jar"))
+    }
 }
 
 // 将本地依赖 mod 复制到 dev 运行目录的 mods 文件夹，确保开发环境中 ER/ZeroCore 被正常加载
@@ -237,12 +247,27 @@ if (platform == 'neoforge') {
 publishing {
     publications {
         register('mavenJava', MavenPublication) {
-            from components.java
+            groupId = findProperty('mod_group_id') ?: 'com.compact.extremereactor'
+            // Stonecutter 子项目名是 "1.20.1"/"1.21.1"，默认 artifactId 不可读；
+            // 用 <mod_id>-<Loader>-<MC> 保证双端坐标唯一且自解释
+            artifactId = "${findProperty('mod_id') ?: 'compactextremereactor'}-${loaderLabel}-${mcVersion}"
+            version = findProperty('mod_version') ?: '1.0.0-beta17'
+            // 只发布可分发 jar 本体：不接 from components.java，避免把 libs/ 本地
+            // ER/ZeroCore 依赖写进 pom（mod 的 pom 消费方是人，不是依赖解析器）。
+            // 可分发 jar 的来源：1.21.1（NeoForge）无重映射步骤，jar 即产物；1.20.1
+            // （legacyforge）的 jar 产物是 devlibs 下的未重映射中间产物，最终 jar 由
+            // reobfJar（RemapJar）写入 libs——实测直接发布 jar 会得到与 libs 校验和
+            // 不一致的中间产物，必须发布 reobfJar 的输出（任务引用自带依赖，publish 会
+            // 自动先跑 reobfJar）
+            artifact(tasks.findByName('reobfJar') ?: tasks.named('jar'))
         }
     }
     repositories {
         maven {
-            url "file://${project.projectDir}/repo"
+            // 旧写法 "file://${project.projectDir}/repo" 在 Windows 带空格路径下无法转 URI
+            // （实测 publish 直接失败：Cannot convert URI ... to a file），改用 rootProject 相对
+            // 路径经 project.uri(File) 正确转义；落在根 build/ 内随 .gitignore 排除
+            url = rootProject.file('build/maven-repo')
         }
     }
 }

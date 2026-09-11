@@ -4,7 +4,6 @@ import com.compact.extremereactor.common.menu.CompactTurbineMenu;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.player.Inventory;
 
 /**
@@ -15,29 +14,29 @@ import net.minecraft.world.entity.player.Inventory;
  */
 public class CompactTurbineScreen extends AbstractContainerScreen<CompactTurbineMenu> {
 
-    private static final ResourceLocation BACKGROUND = new ResourceLocation(
-            "bigreactors", "textures/gui/multiblock/basic_background.png");
+    private static final int BG_COLOR = 0xFF333333;
 
     public CompactTurbineScreen(CompactTurbineMenu menu, Inventory playerInventory, Component title) {
         super(menu, playerInventory, title);
-        this.imageWidth = 176;
-        this.imageHeight = 166;
+        this.imageWidth = 264;
+        this.imageHeight = 120;
     }
 
     @Override
     protected void renderBg(GuiGraphics guiGraphics, float partialTick, int mouseX, int mouseY) {
-        guiGraphics.blit(BACKGROUND, this.leftPos, this.topPos, 0, 0, this.imageWidth, this.imageHeight, 256, 256);
+        // 背景（纯色面板，不依赖 ER 纹理）
+        guiGraphics.fill(this.leftPos, this.topPos, this.leftPos + this.imageWidth, this.topPos + this.imageHeight, BG_COLOR);
 
         // 能量条（右上，竖直）
-        this.renderVerticalBar(guiGraphics, this.leftPos + 152, this.topPos + 17, 16, 60,
+        this.renderVerticalBar(guiGraphics, this.leftPos + 244, this.topPos + 16, 12, 90,
                 this.menu.getData(CompactTurbineMenu.DATA_ENERGY),
                 this.menu.getData(CompactTurbineMenu.DATA_ENERGY_CAPACITY), 0xFFE8B000);
         // 蒸汽条（水平，淡蓝）
-        this.renderHorizontalBar(guiGraphics, this.leftPos + 8, this.topPos + 17, 80, 8,
+        this.renderHorizontalBar(guiGraphics, this.leftPos + 8, this.topPos + 30, 140, 8,
                 this.menu.getData(CompactTurbineMenu.DATA_STEAM),
                 this.menu.getData(CompactTurbineMenu.DATA_FLUID_CAPACITY), 0xFFB0D0E0);
         // 冷凝水条（水平，深蓝）
-        this.renderHorizontalBar(guiGraphics, this.leftPos + 8, this.topPos + 27, 80, 8,
+        this.renderHorizontalBar(guiGraphics, this.leftPos + 8, this.topPos + 52, 140, 8,
                 this.menu.getData(CompactTurbineMenu.DATA_WATER),
                 this.menu.getData(CompactTurbineMenu.DATA_FLUID_CAPACITY), 0xFF2050A0);
     }
@@ -62,22 +61,42 @@ public class CompactTurbineScreen extends AbstractContainerScreen<CompactTurbine
 
     @Override
     protected void renderLabels(GuiGraphics guiGraphics, int mouseX, int mouseY) {
+        // 控制器初始化失败时，顶部显示红色警告
+        if (this.menu.getData(CompactTurbineMenu.DATA_INIT_FAILED) == 1) {
+            guiGraphics.drawString(this.font,
+                    Component.translatable("gui.compactextremereactor.init_failed"),
+                    8, 4, 0xFFC04040);
+            return;
+        }
+        if (this.menu.getData(CompactTurbineMenu.DATA_CONTROLLER_READY) != 1) {
+            guiGraphics.drawString(this.font,
+                    Component.translatable("gui.compactextremereactor.controller_initializing"),
+                    8, 4, 0xFFE0C040);
+            return;
+        }
         // 发电量与流体量文本
         guiGraphics.drawString(this.font,
                 Component.translatable("gui.compactextremereactor.power",
                         this.menu.getData(CompactTurbineMenu.DATA_POWER)),
-                8, 47, 0xFFFFFF);
+                8, 4, 0xFFFFFF);
+        // 涡轮机转速
+        final int rpmRaw = this.menu.getData(CompactTurbineMenu.DATA_ROTOR_SPEED);
+        final double rpm = rpmRaw / 10.0;
+        final int rpmColor = rpm > 0 ? 0xFFE0C040 : 0xFF808080;
+        guiGraphics.drawString(this.font,
+                Component.translatable("gui.compactextremereactor.rotor_speed", String.format("%.0f", rpm)),
+                90, 4, rpmColor);
         guiGraphics.drawString(this.font,
                 Component.translatable("gui.compactextremereactor.steam",
                         this.menu.getData(CompactTurbineMenu.DATA_STEAM)),
-                8, 57, 0xFFFFFF);
+                8, 20, 0xFFFFFF);
         guiGraphics.drawString(this.font,
                 Component.translatable("gui.compactextremereactor.water",
                         this.menu.getData(CompactTurbineMenu.DATA_WATER)),
-                8, 67, 0xFFFFFF);
+                8, 42, 0xFFFFFF);
         guiGraphics.drawString(this.font,
                 Component.translatable("gui.compactextremereactor.energy",
                         this.menu.getData(CompactTurbineMenu.DATA_ENERGY)),
-                116, 24, 0xFFFFFF);
+                8, 64, 0xFFFFFF);
     }
 }

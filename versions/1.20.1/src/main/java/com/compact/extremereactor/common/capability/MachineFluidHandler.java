@@ -3,15 +3,13 @@ package com.compact.extremereactor.common.capability;
 import net.minecraftforge.fluids.FluidStack;
 import net.minecraftforge.fluids.capability.IFluidHandler;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 /**
- * 组合流体处理器：将控制器的"输入"与"输出"两个流体处理器合并为一个能力。
+ * 组合流体处理器：把一个机器的输入端和输出端合并为两个逻辑槽位。
  *
- * 压缩机器只暴露一个流体能力槽，但需要同时支持进料与出料：
- *   - 反应堆：输入水 → 输出蒸汽
- *   - 涡轮机：输入蒸汽 → 输出冷凝水
- * 本类把 fill 路由到输入处理器、drain 路由到输出处理器，槽位索引按
- * "先输入后输出"合并，让玩家用一条流体管道即可完成进料与出料。
+ * <p>tank 0 是输入，tank 1 是输出；两者共享同一个 ER FluidContainer 的底层容量，
+ * 并不是两个相互独立的储罐。fill/drain 仍按操作方向路由到对应端点。</p>
  */
 public class MachineFluidHandler implements IFluidHandler {
 
@@ -30,17 +28,20 @@ public class MachineFluidHandler implements IFluidHandler {
 
     @Override
     public @NotNull FluidStack getFluidInTank(int tank) {
-        return this.tankOf(tank).getFluidInTank(this.localIndex(tank));
+        final IFluidHandler handler = this.handlerFor(tank);
+        return handler == null ? FluidStack.EMPTY : handler.getFluidInTank(this.localIndex(tank));
     }
 
     @Override
     public int getTankCapacity(int tank) {
-        return this.tankOf(tank).getTankCapacity(this.localIndex(tank));
+        final IFluidHandler handler = this.handlerFor(tank);
+        return handler == null ? 0 : handler.getTankCapacity(this.localIndex(tank));
     }
 
     @Override
     public boolean isFluidValid(int tank, @NotNull FluidStack stack) {
-        return this.tankOf(tank).isFluidValid(this.localIndex(tank), stack);
+        final IFluidHandler handler = this.handlerFor(tank);
+        return handler != null && handler.isFluidValid(this.localIndex(tank), stack);
     }
 
     @Override
@@ -58,12 +59,13 @@ public class MachineFluidHandler implements IFluidHandler {
         return this._output.drain(maxDrain, action);
     }
 
-    /** 按合并后的槽位索引路由到输入/输出处理器。 */
-    private IFluidHandler tankOf(int tank) {
+    private @Nullable IFluidHandler handlerFor(int tank) {
+        if (tank < 0 || tank >= this.getTanks()) {
+            return null;
+        }
         return tank < this._input.getTanks() ? this._input : this._output;
     }
 
-    /** 转换为子处理器内部的槽位索引。 */
     private int localIndex(int tank) {
         return tank < this._input.getTanks() ? tank : tank - this._input.getTanks();
     }

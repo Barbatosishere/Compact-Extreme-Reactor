@@ -32,7 +32,7 @@ license="${mod_license}"
 [[dependencies.${mod_id}]]
     modId="bigreactors"
     type="required"
-    versionRange="[1.21.1-2.4.9,)"
+    versionRange="[1.21.1-2.4.9,1.21.1-2.5.0)"
     ordering="AFTER"
     side="BOTH"
 
@@ -40,6 +40,6 @@ license="${mod_license}"
 [[dependencies.${mod_id}]]
     modId="zerocore"
     type="required"
-    versionRange="[1.21.1-2.4.9,)"
+    versionRange="[1.21.1-2.4.9,1.21.1-2.5.0)"
     ordering="AFTER"
     side="BOTH"

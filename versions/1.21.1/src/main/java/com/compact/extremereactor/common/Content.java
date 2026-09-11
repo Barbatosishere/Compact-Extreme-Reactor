@@ -48,9 +48,10 @@ public final class Content {
     public static final DeferredBlock<CompactTurbineBlock> COMPACT_TURBINE = BLOCKS.register("compact_turbine",
             () -> new CompactTurbineBlock(BlockBehaviour.Properties.of().strength(5.0F, 30.0F)));
 
-    public static final DeferredItem<BlockItem> COMPACT_REACTOR_ITEM = ITEMS.registerSimpleBlockItem("compact_reactor", COMPACT_REACTOR);
-    public static final DeferredItem<BlockItem> COMPACT_TURBINE_ITEM = ITEMS.registerSimpleBlockItem("compact_turbine", COMPACT_TURBINE);
-
+    public static final DeferredItem<BlockItem> COMPACT_REACTOR_ITEM = ITEMS.register("compact_reactor",
+            () -> new BlockItem(COMPACT_REACTOR.get(), new Item.Properties().stacksTo(1)));
+    public static final DeferredItem<BlockItem> COMPACT_TURBINE_ITEM = ITEMS.register("compact_turbine",
+            () -> new BlockItem(COMPACT_TURBINE.get(), new Item.Properties().stacksTo(1)));
     public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<CompactReactorTileEntity>> COMPACT_REACTOR_ENTITY =
             BLOCK_ENTITY_TYPES.register("compact_reactor", () ->
                     BlockEntityType.Builder.of(CompactReactorTileEntity::new, COMPACT_REACTOR.get()).build(null));

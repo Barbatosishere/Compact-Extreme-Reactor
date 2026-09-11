@@ -5,6 +5,9 @@ import it.zerono.mods.zerocore.lib.data.stack.OperationMode;
 import it.zerono.mods.zerocore.lib.energy.EnergySystem;
 import it.zerono.mods.zerocore.lib.energy.IWideEnergyStorage2;
 import net.neoforged.neoforge.energy.IEnergyStorage;
+import org.jetbrains.annotations.Nullable;
+
+import java.util.function.Supplier;
 
 /**
  * 将 ZeroCore 的 {@link IWideEnergyStorage2}（ER 控制器）适配为 NeoForge 的
@@ -16,10 +19,28 @@ import net.neoforged.neoforge.energy.IEnergyStorage;
  */
 public class CompactEnergyStorage implements IEnergyStorage {
 
-    private final IWideEnergyStorage2 _delegate;
+    private final Supplier<? extends IWideEnergyStorage2> _delegate;
+    private volatile boolean _released;
 
     public CompactEnergyStorage(IWideEnergyStorage2 delegate) {
+        this(() -> delegate);
+    }
+
+    /**
+     * 延迟解析控制器，避免能力查询在区块加载等嵌套路径中同步初始化控制器。
+     */
+    public CompactEnergyStorage(Supplier<? extends IWideEnergyStorage2> delegate) {
         this._delegate = delegate;
+    }
+
+    /** 使已分发的旧能力引用立即失效；可重复调用。 */
+    public void release() {
+        this._released = true;
+    }
+
+    @Nullable
+    private IWideEnergyStorage2 delegate() {
+        return this._released ? null : this._delegate.get();
     }
 
     @Override
@@ -30,11 +51,15 @@ public class CompactEnergyStorage implements IEnergyStorage {
 
     @Override
     public int extractEnergy(int maxExtract, boolean simulate) {
-        if (maxExtract <= 0) {
+        if (this._released || maxExtract <= 0) {
+            return 0;
+        }
+        final IWideEnergyStorage2 delegate = this.delegate();
+        if (delegate == null) {
             return 0;
         }
         final OperationMode mode = simulate ? OperationMode.Simulate : OperationMode.Execute;
-        final long extracted = this._delegate
+        final long extracted = delegate
                 .extractEnergy(EnergySystem.ForgeEnergy, WideAmount.from(maxExtract), mode)
                 .longValue();
         // 防止 long 超出 int 范围时截断
@@ -43,19 +68,27 @@ public class CompactEnergyStorage implements IEnergyStorage {
 
     @Override
     public int getEnergyStored() {
-        final long energy = this._delegate.getEnergyStored(EnergySystem.ForgeEnergy).longValue();
+        final IWideEnergyStorage2 delegate = this.delegate();
+        if (delegate == null) {
+            return 0;
+        }
+        final long energy = delegate.getEnergyStored(EnergySystem.ForgeEnergy).longValue();
         return energy > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) energy;
     }
 
     @Override
     public int getMaxEnergyStored() {
-        final long capacity = this._delegate.getCapacity(EnergySystem.ForgeEnergy).longValue();
+        final IWideEnergyStorage2 delegate = this.delegate();
+        if (delegate == null) {
+            return 0;
+        }
+        final long capacity = delegate.getCapacity(EnergySystem.ForgeEnergy).longValue();
         return capacity > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) capacity;
     }
 
     @Override
     public boolean canExtract() {
-        return true;
+        return !this._released;
     }
 
     @Override

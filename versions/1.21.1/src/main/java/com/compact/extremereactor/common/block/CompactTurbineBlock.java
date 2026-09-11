@@ -4,9 +4,12 @@ import com.compact.extremereactor.common.menu.CompactTurbineMenu;
 import com.compact.extremereactor.common.tile.CompactTurbineTileEntity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
+import net.minecraft.world.ItemInteractionResult;
 import net.minecraft.world.SimpleMenuProvider;
 import net.minecraft.world.entity.player.Player;
+import net.neoforged.neoforge.fluids.FluidUtil;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
@@ -24,6 +27,16 @@ public class CompactTurbineBlock extends CompactMachineBlock {
     @Override
     public BlockEntity newBlockEntity(BlockPos pos, BlockState state) {
         return new CompactTurbineTileEntity(pos, state);
+    }
+
+    @Override
+    protected ItemInteractionResult useItemOn(net.minecraft.world.item.ItemStack stack, BlockState state,
+                                              Level level, BlockPos pos, Player player, InteractionHand hand,
+                                              BlockHitResult hitResult) {
+        if (FluidUtil.interactWithFluidHandler(player, hand, level, pos, hitResult.getDirection())) {
+            return ItemInteractionResult.sidedSuccess(level.isClientSide());
+        }
+        return ItemInteractionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION;
     }
 
     @Override

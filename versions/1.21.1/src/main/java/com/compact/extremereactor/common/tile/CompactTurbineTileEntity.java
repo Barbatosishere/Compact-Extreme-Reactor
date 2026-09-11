@@ -5,9 +5,11 @@ import com.compact.extremereactor.common.capability.MachineFluidHandler;
 import com.compact.extremereactor.common.config.CompactConfig;
 import com.compact.extremereactor.common.multiblock.CompactTurbineController;
 import com.compact.extremereactor.common.multiblock.ICompactController;
+import it.zerono.mods.extremereactors.api.coolant.FluidMappingsRegistry;
 import it.zerono.mods.zerocore.lib.data.IoDirection;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.block.state.BlockState;
+import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.neoforge.fluids.capability.IFluidHandler;
 import net.neoforged.neoforge.fluids.capability.templates.EmptyFluidHandler;
 
@@ -39,15 +41,32 @@ public class CompactTurbineTileEntity extends AbstractCompactMachineTileEntity {
 
     @Override
     protected void onControllerInitialized(ICompactController controller) {
-        // 涡轮机就绪即可运行（有蒸汽才发电，无蒸汽自然停转）
-        controller.setMachineActive(true);
+        // 涡轮机激活策略：
+        //   1. 读档：_pendingControllerTag != null → ER syncDataFrom 已在 initController 中先于本钩子
+        //      执行，已恢复存档的 _isActive 状态（玩家之前的开关选择保留）→ 不再覆盖。
+        //   2. 新放置：_pendingControllerTag == null → 没有存档数据 → 显式 setMachineActive(true)
+        //      确保新放置涡轮机立即运行（不依赖 ER 内部默认值，未来 ER 版本默认 false 也不会受影响）。
+        if (!this.hasPendingControllerTag()) {
+            controller.setMachineActive(true);
+        }
     }
 
     @Override
-    protected IFluidHandler createFluidHandler(ICompactController controller) {
+    protected IFluidHandler createFluidHandler() {
         // 涡轮机流体端口：输入蒸汽 → 输出冷凝水
+        final ICompactController controller = this._controller;
         final IFluidHandler input = controller.getFluidHandler(IoDirection.Input).orElse(EmptyFluidHandler.INSTANCE);
         final IFluidHandler output = controller.getFluidHandler(IoDirection.Output).orElse(EmptyFluidHandler.INSTANCE);
         return new MachineFluidHandler(input, output);
+    }
+
+    @Override
+    protected int getPendingFluidTankCount() {
+        return 2;
+    }
+
+    @Override
+    protected boolean isPendingFluidValid(int tank, FluidStack stack) {
+        return tank == 0 && !stack.isEmpty() && FluidMappingsRegistry.hasVaporFrom(stack.getFluid());
     }
 }

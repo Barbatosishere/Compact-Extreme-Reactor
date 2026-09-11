@@ -14,6 +14,7 @@ public final class CompactConfig {
     }
 
     public static final ModConfigSpec SPEC;
+    public static final ModConfigSpec.BooleanValue REACTOR_AUTO_START;
     public static final ModConfigSpec.IntValue REACTOR_FUEL_RODS;
     public static final ModConfigSpec.IntValue REACTOR_CONTROL_RODS;
     public static final ModConfigSpec.IntValue REACTOR_POWER_TAPS;
@@ -29,20 +30,26 @@ public final class CompactConfig {
         ModConfigSpec.Builder builder = new ModConfigSpec.Builder();
 
         // ------------------------------------------------------------------
+        // 通用设置
+        // ------------------------------------------------------------------
+        REACTOR_AUTO_START = builder.comment("放置后是否自动启动反应堆（false=需手动点击开关激活）")
+                .define("reactor.autoStart", false);
+
+        // ------------------------------------------------------------------
         // 反应堆模拟参数（对应真实多方块的部件数量与内部尺寸）
         // ------------------------------------------------------------------
         REACTOR_FUEL_RODS = builder.comment("模拟的燃料棒数量（燃料容量 = 数量 x 每棒容量）")
-                .defineInRange("reactor.fuelRods", 16, 1, 1000);
+                .defineInRange("reactor.fuelRods", 16, 1, 200);
         REACTOR_CONTROL_RODS = builder.comment("模拟的控制棒数量（影响辐射与功率计算）")
                 .defineInRange("reactor.controlRods", 4, 1, 100);
         REACTOR_POWER_TAPS = builder.comment("模拟的功率输出接口数量（影响能量缓冲容量）")
                 .defineInRange("reactor.powerTaps", 4, 1, 100);
         REACTOR_SIZE_X = builder.comment("模拟的反应堆内部尺寸 X（影响体积与流体容量）")
-                .defineInRange("reactor.sizeX", 9, 3, 64);
+                .defineInRange("reactor.sizeX", 9, 3, 32);
         REACTOR_SIZE_Y = builder.comment("模拟的反应堆内部尺寸 Y")
-                .defineInRange("reactor.sizeY", 9, 3, 64);
+                .defineInRange("reactor.sizeY", 9, 3, 32);
         REACTOR_SIZE_Z = builder.comment("模拟的反应堆内部尺寸 Z")
-                .defineInRange("reactor.sizeZ", 9, 3, 64);
+                .defineInRange("reactor.sizeZ", 9, 3, 32);
 
         // ------------------------------------------------------------------
         // 涡轮机模拟参数（对应真实多方块的转子与线圈规模）
@@ -50,11 +57,11 @@ public final class CompactConfig {
         TURBINE_COIL_RADIUS = builder.comment("模拟的感应线圈半径（影响发电效率）")
                 .defineInRange("turbine.coilRadius", 3, 1, 16);
         TURBINE_SIZE_X = builder.comment("模拟的涡轮机内部尺寸 X（影响流体容量）")
-                .defineInRange("turbine.sizeX", 9, 3, 64);
+                .defineInRange("turbine.sizeX", 9, 3, 32);
         TURBINE_SIZE_Y = builder.comment("模拟的涡轮机内部尺寸 Y（转轴高度）")
-                .defineInRange("turbine.sizeY", 11, 3, 64);
+                .defineInRange("turbine.sizeY", 11, 3, 32);
         TURBINE_SIZE_Z = builder.comment("模拟的涡轮机内部尺寸 Z")
-                .defineInRange("turbine.sizeZ", 9, 3, 64);
+                .defineInRange("turbine.sizeZ", 9, 3, 32);
 
         SPEC = builder.build();
     }
