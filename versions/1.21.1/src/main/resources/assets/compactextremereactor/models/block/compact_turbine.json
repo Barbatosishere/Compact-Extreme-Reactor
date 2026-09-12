@@ -1,6 +1,12 @@
 {
-  "parent": "minecraft:block/cube_all",
+  "parent": "minecraft:block/cube",
   "textures": {
-    "all": "bigreactors:block/turbine/basic/casing_single"
+    "particle": "compactextremereactor:block/compact_turbine_side",
+    "down": "compactextremereactor:block/compact_turbine_bottom",
+    "up": "compactextremereactor:block/compact_turbine_top",
+    "north": "compactextremereactor:block/compact_turbine_front",
+    "south": "compactextremereactor:block/compact_turbine_front",
+    "east": "compactextremereactor:block/compact_turbine_side",
+    "west": "compactextremereactor:block/compact_turbine_side"
   }
 }

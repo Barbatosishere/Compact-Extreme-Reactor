@@ -1,6 +1,12 @@
 {
-  "parent": "minecraft:block/cube_all",
+  "parent": "minecraft:block/cube",
   "textures": {
-    "all": "bigreactors:block/reactor/basic/plating"
+    "particle": "compactextremereactor:block/compact_reactor_side",
+    "down": "compactextremereactor:block/compact_reactor_bottom",
+    "up": "compactextremereactor:block/compact_reactor_top",
+    "north": "compactextremereactor:block/compact_reactor_front",
+    "south": "compactextremereactor:block/compact_reactor_front",
+    "east": "compactextremereactor:block/compact_reactor_side",
+    "west": "compactextremereactor:block/compact_reactor_side"
   }
 }
