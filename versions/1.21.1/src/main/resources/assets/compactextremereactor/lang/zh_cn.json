@@ -20,6 +20,7 @@
   "gui.compactextremereactor.water": "水：%s",
   "gui.compactextremereactor.status_on": "运行中",
   "gui.compactextremereactor.status_off": "已停止",
+  "gui.compactextremereactor.status_energy_full": "能量已满",
   "gui.compactextremereactor.init_failed": "控制器初始化失败，查看服务端日志",
   "gui.compactextremereactor.controller_initializing": "控制器正在初始化，请稍后再试",
   "gui.compactextremereactor.fuel_inserted": "已注入 %s 燃料",

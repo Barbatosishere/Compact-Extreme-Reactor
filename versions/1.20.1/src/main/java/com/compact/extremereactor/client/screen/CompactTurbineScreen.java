@@ -61,7 +61,12 @@ public class CompactTurbineScreen extends AbstractContainerScreen<CompactTurbine
             this.drawFit(guiGraphics, Component.translatable("gui.compactextremereactor.controller_initializing"), 14, 14, 272, 0xFFFFD166);
             return;
         }
+        boolean energyFull = this.menu.getData(CompactTurbineMenu.DATA_ENERGY_CAPACITY) > 0
+                && this.menu.getData(CompactTurbineMenu.DATA_ENERGY) >= this.menu.getData(CompactTurbineMenu.DATA_ENERGY_CAPACITY);
         this.drawFit(guiGraphics, Component.translatable("gui.compactextremereactor.power", this.menu.getData(CompactTurbineMenu.DATA_POWER)), 14, 14, 150, 0xFFFFFFFF);
+        if (energyFull) {
+            this.drawFit(guiGraphics, Component.translatable("gui.compactextremereactor.status_energy_full"), 174, 32, 112, 0xFFE7B95B);
+        }
         double rpm = this.menu.getData(CompactTurbineMenu.DATA_ROTOR_SPEED) / 10.0;
         this.drawFit(guiGraphics, Component.translatable("gui.compactextremereactor.rotor_speed", String.format("%.0f", rpm)), 174, 14, 112, rpm > 0 ? 0xFFE7B95B : 0xFF9AA7B2);
         this.drawFit(guiGraphics, Component.translatable("gui.compactextremereactor.steam", this.menu.getData(CompactTurbineMenu.DATA_STEAM)), 14, 48, 174, 0xFFA3DCE7);

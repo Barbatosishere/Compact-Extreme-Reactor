@@ -45,12 +45,18 @@ public enum CompactMachineProvider implements IBlockComponentProvider {
             return;
         }
 
-        // 运行状态：走 translatable，由 lang 文件控制实际显示文本（en_us/zh_cn 都已定义）
+        // 运行状态：满仓优先（与 GUI 三态一致），不覆盖玩家开关本身
+        final boolean energyFull = data.getBoolean("EnergyFull");
         final boolean active = data.getBoolean("Active");
-        tooltip.add((active
-                ? Component.translatable("gui.compactextremereactor.status_on")
-                : Component.translatable("gui.compactextremereactor.status_off"))
-                .withStyle(active ? ChatFormatting.GREEN : ChatFormatting.RED));
+        if (energyFull) {
+            tooltip.add(Component.translatable("gui.compactextremereactor.status_energy_full")
+                    .withStyle(ChatFormatting.GOLD));
+        } else {
+            tooltip.add((active
+                    ? Component.translatable("gui.compactextremereactor.status_on")
+                    : Component.translatable("gui.compactextremereactor.status_off"))
+                    .withStyle(active ? ChatFormatting.GREEN : ChatFormatting.RED));
+        }
 
         // 能量
         final long energy = data.getLong("Energy");
@@ -143,6 +149,7 @@ public enum CompactMachineProvider implements IBlockComponentProvider {
             try {
                 tag.putBoolean("Initialized", true);
                 tag.putBoolean("Active", controller.isMachineActive());
+                tag.putBoolean("EnergyFull", controller.isEnergyBufferFull());
                 tag.putLong("Energy", controller.getEnergyStored(EnergySystem.ForgeEnergy).longValue());
                 tag.putLong("EnergyCapacity", controller.getCapacity(EnergySystem.ForgeEnergy).longValue());
                 tag.putDouble("Power", controller.getEnergyGeneratedLastTick());
