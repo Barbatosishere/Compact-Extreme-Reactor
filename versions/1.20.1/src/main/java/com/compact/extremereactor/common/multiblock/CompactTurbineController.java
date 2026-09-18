@@ -149,6 +149,11 @@ public class CompactTurbineController extends MultiblockTurbine implements IComp
 
     /** 每个服务端游戏刻驱动一次涡轮机逻辑。 */
     public void tick() {
+        // FE 缓存已满：跳过进汽/冷凝/发电，抽出能量后自动恢复。
+        // 不改 isMachineActive()：涡轮机没有 GUI 开关，玩家开关状态必须保留。
+        if (this.isEnergyBufferFull()) {
+            return;
+        }
         // 冷凝丢失补偿需要在 ER 模拟前后夹读容器，见 compensateCondensationLoss
         final FluidContainer container = (FluidContainer) this.getFluidContainer();
         final int steamBefore = container.getGasAmount();
@@ -261,7 +266,7 @@ public class CompactTurbineController extends MultiblockTurbine implements IComp
      */
     @Override
     public double getEnergyGeneratedLastTick() {
-        return super.getEnergyGeneratedLastTick();
+        return this.isEnergyBufferFull() ? 0.0d : super.getEnergyGeneratedLastTick();
     }
 
     @Override
