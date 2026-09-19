@@ -189,8 +189,22 @@ public class CompactReactorScreen extends AbstractContainerScreen<CompactReactor
                 14,
                 112,
                 heatColor);
+        boolean energyFull = this.menu.getData(CompactReactorMenu.DATA_ENERGY_CAPACITY) > 0
+                && this.menu.getData(CompactReactorMenu.DATA_ENERGY) >= this.menu.getData(CompactReactorMenu.DATA_ENERGY_CAPACITY);
         boolean active = this.menu.getData(CompactReactorMenu.DATA_ACTIVE) == 1;
-        this.drawFit(guiGraphics, Component.translatable(active ? "gui.compactextremereactor.status_on" : "gui.compactextremereactor.status_off"), 14, 44, 174, active ? 0xFF70D6A0 : 0xFFFF6B6B);
+        final String statusKey;
+        final int statusColor;
+        if (energyFull) {
+            statusKey = "gui.compactextremereactor.status_energy_full";
+            statusColor = 0xFFE7B95B;
+        } else if (active) {
+            statusKey = "gui.compactextremereactor.status_on";
+            statusColor = 0xFF70D6A0;
+        } else {
+            statusKey = "gui.compactextremereactor.status_off";
+            statusColor = 0xFFFF6B6B;
+        }
+        this.drawFit(guiGraphics, Component.translatable(statusKey), 14, 44, 174, statusColor);
         int rod = this._localRatioInitialized ? this._localControlRodRatio : this.menu.getData(CompactReactorMenu.DATA_CONTROL_ROD);
         this.drawFit(guiGraphics, Component.translatable("gui.compactextremereactor.control_rod", rod), 14, 74, 174, 0xFFFFFFFF);
         this.drawFit(guiGraphics, Component.translatable("gui.compactextremereactor.fuel", this.menu.getData(CompactReactorMenu.DATA_FUEL)), 14, 100, 272, 0xFFB4D85A);

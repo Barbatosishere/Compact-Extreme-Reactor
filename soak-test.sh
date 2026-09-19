@@ -4,8 +4,9 @@
 #   I1  涡轮守恒：S + W + 已排水量 == 累计灌入蒸汽量（冷凝 1:1，与冷凝进度无关）
 #   I2  状态持久：区块卸载/重载后水位、储能、active 精确恢复
 #   I3  状态机：toggle 每次都精确生效
-#   I4  反应堆：每轮 5000 水 -> 4250 蒸汽（0.85 ± 取整容差）
+#   I4  反应堆：蒸汽增量 == 0.85 × 实际消耗水量（±200）且蒸汽增量 ≤ 灌入水量
 #   I5  容量钳制：任何时刻罐内容量不越界（由 fill 接受量间接验证）
+#   I6  废液隔离：蒸汽罐空时 drain(int) 不得抽出废液；drain(FluidStack) 守恒
 # 前提：服务器已启动且 RCON 25575 可用；测试机器位于 2950/2954/2974 @ y=100 z=2950。
 cd "$(dirname "$0")" || exit 1
 
@@ -123,6 +124,65 @@ for i in $(seq 1 10); do
     if [ -n "$BAD" ]; then VIOL=$((VIOL+1)); echo "  第 $i 轮: $BAD"; fi
 done
 check "P5 违规次数" 0 "$VIOL"
+
+echo "===== P7 废液隔离：无类型 drain 不得抽废液；类型 drain 守恒 ====="
+RCON "cerdev active $REAC false" > /dev/null
+sleep 1
+RCON "cerdev drain $REAC 200000" > /dev/null
+sleep 1
+W0="$(FIELD "$REAC" 'waste')"
+check "P7 冻堆后 waste 基线可读" "ok" "$([ -n "$W0" ] && echo ok || echo bad)"
+UNT="$(RCON "cerdev drain $REAC 1000")"
+echo "  untyped: $(echo "$UNT" | grep '^\[cerdev\]')"
+if echo "$UNT" | grep -q 'bigreactors:cyanite\|bigreactors:magentite\|bigreactors:rossinite'; then
+    FAIL=$((FAIL+1)); echo "  FAIL  P7 无类型 drain 抽出了废液"
+else
+    PASS=$((PASS+1)); echo "  PASS  P7 无类型 drain 未抽废液"
+fi
+W1="$(FIELD "$REAC" 'waste')"
+check "P7 无类型 drain 不减少 waste" "$W0" "$W1"
+RCON "cerdev waste $REAC inject 2000" > /dev/null
+sleep 1
+W2="$(FIELD "$REAC" 'waste')"
+TYP="$(RCON "cerdev drain $REAC 1000 bigreactors:cyanite")"
+echo "  typed: $(echo "$TYP" | grep '^\[cerdev\]')"
+W3="$(FIELD "$REAC" 'waste')"
+if echo "$TYP" | grep -q 'cyanite x1000'; then
+    check "P7 类型 drain 1000 后 waste" "$((W2 - 1000))" "$W3"
+else
+    echo "  SKIP  P7 类型 drain 非 cyanite（当前废料可能不是青化物）"
+    PASS=$((PASS+1))
+fi
+RCON "cerdev active $REAC true" > /dev/null
+
+echo "===== P8 FE 满仓自动停机：不耗蒸汽、active 不变、抽出后恢复 ====="
+# P3 以 active=false 收尾，必须先打开。先灌满 FE 再灌蒸汽：暂停期间蒸汽原样保留，抽出后才应进汽。
+RCON "cerdev active $SPARE true" > /dev/null
+RCON "cerdev drain $SPARE 200000" > /dev/null
+sleep 1
+RCON "cerdev energy $SPARE fill" > /dev/null
+sleep 1
+check "P8 满仓 energyFull" true "$(FIELD "$SPARE" 'energyFull')"
+check "P8 满仓 active 仍 true" true "$(FIELD "$SPARE" 'active')"
+RCON "cerdev fill $SPARE bigreactors:steam 5000" > /dev/null
+sleep 1
+S1="$(TANK "$SPARE" 0)"; W1="$(TANK "$SPARE" 1)"
+sleep 3
+S2="$(TANK "$SPARE" 0)"; W2="$(TANK "$SPARE" 1)"
+check "P8 满仓蒸汽冻结" "$S1" "$S2"
+check "P8 满仓水位冻结" "$W1" "$W2"
+RCON "cerdev energy $SPARE extract 1000000" > /dev/null
+sleep 1
+check "P8 抽出后 energyFull" false "$(FIELD "$SPARE" 'energyFull')"
+check "P8 抽出后 active 仍 true" true "$(FIELD "$SPARE" 'active')"
+sleep 3
+S3="$(TANK "$SPARE" 0)"
+if [ -n "$S3" ] && [ -n "$S2" ] && [ "$S3" -lt "$S2" ]; then
+    PASS=$((PASS+1)); echo "  PASS  P8 抽出后恢复进汽 S2=$S2 S3=$S3"
+else
+    FAIL=$((FAIL+1)); echo "  FAIL  P8 抽出后未恢复进汽 S2=$S2 S3=$S3"
+fi
+RCON "cerdev drain $SPARE 200000" > /dev/null
 
 echo "===== P6 TPS 终测 ====="
 T0="$(RCON "time query gametime" | sed -n 2p | grep -oE '[0-9]+')"

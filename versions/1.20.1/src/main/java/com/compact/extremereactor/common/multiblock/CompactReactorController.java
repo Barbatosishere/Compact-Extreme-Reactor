@@ -265,9 +265,10 @@ public class CompactReactorController extends MultiblockReactor implements IComp
      */
     @Override
     protected boolean updateServer() {
-        // 非激活状态时：不消耗燃料/不产热/不产蒸汽/不发电，
-        // 但残余堆温继续向环境温度(20°C)自然消散（复刻 ER performPassiveHeatLoss）
-        if (!this.isMachineActive()) {
+        // 非激活或 FE 缓存已满：不消耗燃料/不产热/不产蒸汽/不发电，
+        // 但残余堆温继续向环境温度(20°C)自然消散（复刻 ER performPassiveHeatLoss）。
+        // 满仓不改 isMachineActive()：抽出能量腾出空位后自动恢复。
+        if (!this.isMachineActive() || this.isEnergyBufferFull()) {
             this._feGeneratedLastTick = 0;
             this.performPassiveHeatLoss();
             return false;

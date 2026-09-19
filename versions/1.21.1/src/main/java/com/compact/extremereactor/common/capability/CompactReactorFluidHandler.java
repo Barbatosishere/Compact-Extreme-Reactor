@@ -134,12 +134,14 @@ public final class CompactReactorFluidHandler implements IFluidHandler {
         return this.drainWaste(resource.getAmount(), action);
     }
 
+    /**
+     * 无类型抽取只出蒸汽。蒸汽罐空时不得回落到废液，否则通往涡轮机的管道
+     * 会把青化物/赤锶抽进去。废液必须走 {@link #drain(FluidStack, FluidAction)}。
+     */
     @Override
     public @NotNull FluidStack drain(int maxDrain, FluidAction action) {
         if (this._released || maxDrain <= 0) return FluidStack.EMPTY;
-        final FluidStack vapor = this._vapor.drain(maxDrain, action);
-        if (!vapor.isEmpty()) return vapor;
-        return this.drainWaste(maxDrain, action);
+        return this._vapor.drain(maxDrain, action);
     }
 
     private Optional<IMapping<TagKey<Fluid>, Reactant>> fuelMapping(FluidStack stack) {

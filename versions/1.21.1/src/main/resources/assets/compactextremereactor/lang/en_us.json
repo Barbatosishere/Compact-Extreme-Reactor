@@ -20,6 +20,7 @@
   "gui.compactextremereactor.water": "Water: %s",
   "gui.compactextremereactor.status_on": "Running",
   "gui.compactextremereactor.status_off": "Stopped",
+  "gui.compactextremereactor.status_energy_full": "Energy Full",
   "gui.compactextremereactor.init_failed": "Controller initialization failed, see server log",
   "gui.compactextremereactor.controller_initializing": "Controller is initializing, try again in a moment",
   "gui.compactextremereactor.fuel_inserted": "Inserted %s fuel",

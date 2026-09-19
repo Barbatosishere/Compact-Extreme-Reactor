@@ -2,7 +2,9 @@ package com.compact.extremereactor.common.multiblock;
 
 import it.zerono.mods.extremereactors.gamecontent.multiblock.common.IFluidContainer;
 import it.zerono.mods.zerocore.lib.data.IoDirection;
+import it.zerono.mods.zerocore.lib.data.WideAmount;
 import it.zerono.mods.zerocore.lib.data.nbt.ISyncableEntity;
+import it.zerono.mods.zerocore.lib.energy.EnergySystem;
 import it.zerono.mods.zerocore.lib.energy.IWideEnergyStorage2;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraftforge.fluids.capability.IFluidHandler;
@@ -31,6 +33,19 @@ public interface ICompactController extends IWideEnergyStorage2 {
 
     /** 机器当前是否处于激活（运行）状态。 */
     boolean isMachineActive();
+
+    /**
+     * 内部 FE 缓存已满。满仓时跳过产能模拟（不耗燃料、不进汽、不产热），
+     * 抽出能量腾出空位后自动恢复。不改 {@link #isMachineActive()}：
+     * 涡轮机没有 GUI 开关，玩家开关状态必须保留。
+     */
+    default boolean isEnergyBufferFull() {
+        final WideAmount capacity = this.getCapacity(EnergySystem.ForgeEnergy);
+        if (capacity.isZero()) {
+            return false;
+        }
+        return this.getEnergyStored(EnergySystem.ForgeEnergy).greaterOrEqual(capacity);
+    }
 
     /** 从 NBT 恢复控制器数据。 */
     void syncDataFrom(CompoundTag tag, ISyncableEntity.SyncReason reason);

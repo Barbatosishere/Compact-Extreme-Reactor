@@ -16,6 +16,7 @@ import it.zerono.mods.extremereactors.gamecontent.multiblock.common.FluidContain
 import it.zerono.mods.extremereactors.gamecontent.multiblock.common.FluidType;
 import it.zerono.mods.extremereactors.gamecontent.multiblock.reactor.MultiblockReactor;
 import it.zerono.mods.zerocore.lib.data.WideAmount;
+import it.zerono.mods.zerocore.lib.data.stack.OperationMode;
 import it.zerono.mods.zerocore.lib.energy.EnergySystem;
 import it.zerono.mods.zerocore.lib.data.nbt.ISyncableEntity;
 import net.minecraft.commands.CommandSourceStack;
@@ -72,7 +73,13 @@ public final class DevCommands {
                                 .then(Commands.argument("amount", com.mojang.brigadier.arguments.IntegerArgumentType.integer(1))
                                         .executes(ctx -> devDrain(ctx.getSource(),
                                                 BlockPosArgument.getLoadedBlockPos(ctx, "pos"),
-                                                com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(ctx, "amount"))))))
+                                                com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(ctx, "amount"),
+                                                null))
+                                        .then(Commands.argument("fluid", ResourceLocationArgument.id())
+                                                .executes(ctx -> devDrain(ctx.getSource(),
+                                                        BlockPosArgument.getLoadedBlockPos(ctx, "pos"),
+                                                        com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(ctx, "amount"),
+                                                        ResourceLocationArgument.getId(ctx, "fluid")))))))
                 .then(Commands.literal("active")
                         .then(Commands.argument("pos", BlockPosArgument.blockPos())
                                 .then(Commands.argument("on", com.mojang.brigadier.arguments.BoolArgumentType.bool())
@@ -91,6 +98,16 @@ public final class DevCommands {
                         .then(Commands.argument("pos", BlockPosArgument.blockPos())
                                 .executes(ctx -> devDump(ctx.getSource(),
                                         BlockPosArgument.getLoadedBlockPos(ctx, "pos")))))
+                .then(Commands.literal("energy")
+                        .then(Commands.argument("pos", BlockPosArgument.blockPos())
+                                .then(Commands.literal("fill")
+                                        .executes(ctx -> devEnergyFill(ctx.getSource(),
+                                                BlockPosArgument.getLoadedBlockPos(ctx, "pos"))))
+                                .then(Commands.literal("extract")
+                                        .then(Commands.argument("amount", com.mojang.brigadier.arguments.IntegerArgumentType.integer(1))
+                                                .executes(ctx -> devEnergyExtract(ctx.getSource(),
+                                                        BlockPosArgument.getLoadedBlockPos(ctx, "pos"),
+                                                        com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(ctx, "amount")))))))
                 .then(Commands.literal("selftest")
                         .then(Commands.argument("pos", BlockPosArgument.blockPos())
                                 .executes(ctx -> devSelfTest(ctx.getSource(),
@@ -183,14 +200,29 @@ public final class DevCommands {
         return accepted > 0 ? 1 : 0;
     }
 
-    /** drain：走真实能力路径抽取（反应堆出蒸汽 / 涡轮机出水）。 */
-    private static int devDrain(CommandSourceStack source, BlockPos pos, int amount) {
+    /**
+     * drain：走真实能力路径抽取。
+     * 无 fluidId 时调用 {@code drain(int)}（反应堆只出蒸汽 / 涡轮机出水）；
+     * 带 fluidId 时调用 {@code drain(FluidStack)}，用于抽废液（青化物/品红/赤锶）。
+     */
+    private static int devDrain(CommandSourceStack source, BlockPos pos, int amount,
+                                @org.jetbrains.annotations.Nullable ResourceLocation fluidId) {
         final IFluidHandler handler = fluidHandler(source.getLevel(), pos);
         if (handler == null) {
             source.sendFailure(Component.literal("目标方块无流体能力"));
             return 0;
         }
-        final FluidStack drained = handler.drain(amount, IFluidHandler.FluidAction.EXECUTE);
+        final FluidStack drained;
+        if (fluidId == null) {
+            drained = handler.drain(amount, IFluidHandler.FluidAction.EXECUTE);
+        } else {
+            final Fluid fluid = BuiltInRegistries.FLUID.get(fluidId);
+            if (fluid == null || fluid.defaultFluidState().isEmpty()) {
+                source.sendFailure(Component.literal("未知流体: " + fluidId));
+                return 0;
+            }
+            drained = handler.drain(new FluidStack(fluid, amount), IFluidHandler.FluidAction.EXECUTE);
+        }
         if (drained.isEmpty()) {
             feedback(source, "drain: 无流体可抽取");
             return 0;
@@ -215,6 +247,52 @@ public final class DevCommands {
         tile.setChanged();
         feedback(source, "active=%s".formatted(on));
         return 1;
+    }
+
+    /** energy fill：把内部 FE 缓存灌满，供满仓停机回归。不改 isMachineActive。 */
+    private static int devEnergyFill(CommandSourceStack source, BlockPos pos) {
+        if (!(machineTile(source.getLevel(), pos) instanceof AbstractCompactMachineTileEntity tile)) {
+            source.sendFailure(Component.literal("目标不是压缩机器"));
+            return 0;
+        }
+        final var controller = tile.getController();
+        if (controller == null) {
+            source.sendFailure(Component.literal("控制器未初始化（initFailed?）"));
+            return 0;
+        }
+        final WideAmount inserted = controller.insertEnergy(
+                EnergySystem.ForgeEnergy,
+                controller.getCapacity(EnergySystem.ForgeEnergy),
+                OperationMode.Execute);
+        tile.setChanged();
+        feedback(source, "energyFill inserted=%d feStored=%d/%d energyFull=%s".formatted(
+                inserted.longValue(),
+                controller.getEnergyStored(EnergySystem.ForgeEnergy).longValue(),
+                controller.getCapacity(EnergySystem.ForgeEnergy).longValue(),
+                controller.isEnergyBufferFull()));
+        return 1;
+    }
+
+    /** energy extract：从内部 FE 缓存抽出能量，腾出空位后满仓停机应自动恢复。 */
+    private static int devEnergyExtract(CommandSourceStack source, BlockPos pos, int amount) {
+        if (!(machineTile(source.getLevel(), pos) instanceof AbstractCompactMachineTileEntity tile)) {
+            source.sendFailure(Component.literal("目标不是压缩机器"));
+            return 0;
+        }
+        final var controller = tile.getController();
+        if (controller == null) {
+            source.sendFailure(Component.literal("控制器未初始化（initFailed?）"));
+            return 0;
+        }
+        final WideAmount extracted = controller.extractEnergy(
+                EnergySystem.ForgeEnergy, WideAmount.from(amount), OperationMode.Execute);
+        tile.setChanged();
+        feedback(source, "energyExtract extracted=%d feStored=%d/%d energyFull=%s".formatted(
+                extracted.longValue(),
+                controller.getEnergyStored(EnergySystem.ForgeEnergy).longValue(),
+                controller.getCapacity(EnergySystem.ForgeEnergy).longValue(),
+                controller.isEnergyBufferFull()));
+        return extracted.isZero() ? 0 : 1;
     }
 
     /**
@@ -302,7 +380,12 @@ public final class DevCommands {
             return 0;
         }
         feedback(source, "=== dump @%s ===".formatted(pos.toShortString()));
-        feedback(source, "active=%s initFailed=%s".formatted(controller.isMachineActive(), tile.isControllerInitFailed()));
+        feedback(source, "active=%s energyFull=%s initFailed=%s feStored=%d/%d".formatted(
+                controller.isMachineActive(),
+                controller.isEnergyBufferFull(),
+                tile.isControllerInitFailed(),
+                controller.getEnergyStored(EnergySystem.ForgeEnergy).longValue(),
+                controller.getCapacity(EnergySystem.ForgeEnergy).longValue()));
 
         // 1) 世界侧能力视图（管道看到的）
         final IFluidHandler worldHandler = fluidHandler(level, pos);
