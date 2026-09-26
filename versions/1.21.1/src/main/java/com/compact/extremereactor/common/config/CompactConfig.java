@@ -25,6 +25,9 @@ public final class CompactConfig {
     public static final ModConfigSpec.IntValue TURBINE_SIZE_X;
     public static final ModConfigSpec.IntValue TURBINE_SIZE_Y;
     public static final ModConfigSpec.IntValue TURBINE_SIZE_Z;
+    public static final ModConfigSpec.IntValue FLUIDIZER_SIZE_X;
+    public static final ModConfigSpec.IntValue FLUIDIZER_SIZE_Y;
+    public static final ModConfigSpec.IntValue FLUIDIZER_SIZE_Z;
 
     static {
         ModConfigSpec.Builder builder = new ModConfigSpec.Builder();
@@ -62,6 +65,18 @@ public final class CompactConfig {
                 .defineInRange("turbine.sizeY", 11, 3, 32);
         TURBINE_SIZE_Z = builder.comment("模拟的涡轮机内部尺寸 Z")
                 .defineInRange("turbine.sizeZ", 9, 3, 32);
+
+        // ------------------------------------------------------------------
+        // 流化器模拟参数（影响输出罐容量 = 内部体积 × 4000 mB）
+        // 注：能量缓冲容量固定 50k FE、进料罐 8000 mB、能耗与 tick 数由 ER2 的
+        // fluidizer 配置与配方数据决定（与真实多方块一致），不在此重复配置。
+        // ------------------------------------------------------------------
+        FLUIDIZER_SIZE_X = builder.comment("模拟的流化器内部尺寸 X（影响输出罐容量）")
+                .defineInRange("fluidizer.sizeX", 9, 3, 32);
+        FLUIDIZER_SIZE_Y = builder.comment("模拟的流化器内部尺寸 Y")
+                .defineInRange("fluidizer.sizeY", 9, 3, 32);
+        FLUIDIZER_SIZE_Z = builder.comment("模拟的流化器内部尺寸 Z")
+                .defineInRange("fluidizer.sizeZ", 9, 3, 32);
 
         SPEC = builder.build();
     }

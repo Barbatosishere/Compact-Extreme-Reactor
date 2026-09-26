@@ -1,10 +1,13 @@
 package com.compact.extremereactor.common;
 
 import com.compact.extremereactor.CompactExtremeReactor;
+import com.compact.extremereactor.common.block.CompactFluidizerBlock;
 import com.compact.extremereactor.common.block.CompactReactorBlock;
 import com.compact.extremereactor.common.block.CompactTurbineBlock;
+import com.compact.extremereactor.common.menu.CompactFluidizerMenu;
 import com.compact.extremereactor.common.menu.CompactReactorMenu;
 import com.compact.extremereactor.common.menu.CompactTurbineMenu;
+import com.compact.extremereactor.common.tile.CompactFluidizerTileEntity;
 import com.compact.extremereactor.common.tile.CompactReactorTileEntity;
 import com.compact.extremereactor.common.tile.CompactTurbineTileEntity;
 import net.minecraft.core.registries.Registries;
@@ -48,10 +51,16 @@ public final class Content {
     public static final DeferredBlock<CompactTurbineBlock> COMPACT_TURBINE = BLOCKS.register("compact_turbine",
             () -> new CompactTurbineBlock(BlockBehaviour.Properties.of().strength(5.0F, 30.0F)));
 
+    // 压缩流化器方块：内部模拟整个流化器多方块（能量消费方）
+    public static final DeferredBlock<CompactFluidizerBlock> COMPACT_FLUIDIZER = BLOCKS.register("compact_fluidizer",
+            () -> new CompactFluidizerBlock(BlockBehaviour.Properties.of().strength(5.0F, 30.0F)));
+
     public static final DeferredItem<BlockItem> COMPACT_REACTOR_ITEM = ITEMS.register("compact_reactor",
             () -> new BlockItem(COMPACT_REACTOR.get(), new Item.Properties().stacksTo(1)));
     public static final DeferredItem<BlockItem> COMPACT_TURBINE_ITEM = ITEMS.register("compact_turbine",
             () -> new BlockItem(COMPACT_TURBINE.get(), new Item.Properties().stacksTo(1)));
+    public static final DeferredItem<BlockItem> COMPACT_FLUIDIZER_ITEM = ITEMS.register("compact_fluidizer",
+            () -> new BlockItem(COMPACT_FLUIDIZER.get(), new Item.Properties().stacksTo(1)));
     public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<CompactReactorTileEntity>> COMPACT_REACTOR_ENTITY =
             BLOCK_ENTITY_TYPES.register("compact_reactor", () ->
                     BlockEntityType.Builder.of(CompactReactorTileEntity::new, COMPACT_REACTOR.get()).build(null));
@@ -60,6 +69,10 @@ public final class Content {
             BLOCK_ENTITY_TYPES.register("compact_turbine", () ->
                     BlockEntityType.Builder.of(CompactTurbineTileEntity::new, COMPACT_TURBINE.get()).build(null));
 
+    public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<CompactFluidizerTileEntity>> COMPACT_FLUIDIZER_ENTITY =
+            BLOCK_ENTITY_TYPES.register("compact_fluidizer", () ->
+                    BlockEntityType.Builder.of(CompactFluidizerTileEntity::new, COMPACT_FLUIDIZER.get()).build(null));
+
     public static final DeferredHolder<CreativeModeTab, CreativeModeTab> CREATIVE_TAB = CREATIVE_TABS.register(
             "main", () -> CreativeModeTab.builder()
                     .title(Component.translatable("itemGroup.compactextremereactor"))
@@ -67,6 +80,7 @@ public final class Content {
                     .displayItems((params, output) -> {
                         output.accept(COMPACT_REACTOR_ITEM.get());
                         output.accept(COMPACT_TURBINE_ITEM.get());
+                        output.accept(COMPACT_FLUIDIZER_ITEM.get());
                     })
                     .build());
 
@@ -76,6 +90,8 @@ public final class Content {
             MENU_TYPES.register("compact_reactor", () -> new MenuType<>(CompactReactorMenu::new, FeatureFlags.VANILLA_SET));
     public static final DeferredHolder<MenuType<?>, MenuType<CompactTurbineMenu>> COMPACT_TURBINE_MENU =
             MENU_TYPES.register("compact_turbine", () -> new MenuType<>(CompactTurbineMenu::new, FeatureFlags.VANILLA_SET));
+    public static final DeferredHolder<MenuType<?>, MenuType<CompactFluidizerMenu>> COMPACT_FLUIDIZER_MENU =
+            MENU_TYPES.register("compact_fluidizer", () -> new MenuType<>(CompactFluidizerMenu::new, FeatureFlags.VANILLA_SET));
 
     public static void register(IEventBus modEventBus) {
         BLOCKS.register(modEventBus);

@@ -4,11 +4,11 @@
 #   I1  涡轮守恒：S + W + 已排水量 == 累计灌入蒸汽量（冷凝 1:1，与冷凝进度无关）
 #   I2  状态持久：区块卸载/重载后水位、储能、active 精确恢复
 #   I3  状态机：toggle 每次都精确生效
-#   I4  反应堆：蒸汽增量 == 0.85 × 实际消耗水量（±200）且蒸汽增量 ≤ 灌入水量
+#   I4  反应堆：蒸汽增量 == 0.85 × 实际消耗水量（±200）且蒸汽增量 ≤ 消耗水量
 #   I5  容量钳制：任何时刻罐内容量不越界（由 fill 接受量间接验证）
 #   I6  废液隔离：蒸汽罐空时 drain(int) 不得抽出废液；drain(FluidStack) 守恒
 # 前提：服务器已启动且 RCON 25575 可用；测试机器位于 2950/2954/2974 @ y=100 z=2950。
-cd "$(dirname "$0")" || exit 1
+cd "$(dirname "$0")/.." || exit 1
 
 RCON() { powershell.exe -NoProfile -ExecutionPolicy Bypass -File rcon-port.ps1 25575 cer 127.0.0.1 "$1" 2>/dev/null | tr -d '\r'; }
 DUMP() { RCON "cerdev dump $1" | grep '^\[cerdev\]'; }
@@ -103,24 +103,28 @@ echo "===== P5 反应堆水→蒸汽浸泡 x10（不变量 I4'：0.85 产出律 
 # 状态无关的 mod/上游不变量（字节码 FluidContainer.vaporize 确认）：
 #   a) 无中生有防护：蒸汽增量 <= 灌入水量
 #   b) 0.85 产出律：蒸汽增量 == 0.85 × 实际消耗水量（每 tick floor 舍入，容差 200 > 160 tick）
-#   c) 排空完备：drain 200000 后水/汽双罐归零
+#   c) 排空完备：drain 200000 后蒸汽罐归零；冷却水按契约只进不出（fill-only），
+#      drain 不得改动水罐（W2 == W1）
 VIOL=0
 for i in $(seq 1 10); do
-    RCON "cerdev drain $REAC 200000" > /dev/null   # 预排空，保证 5000 水全额接受
+    RCON "cerdev energy $REAC extract 1000000" > /dev/null   # 留 FE 空位，防满仓停产干扰测量
+    RCON "cerdev drain $REAC 200000" > /dev/null   # 预排空蒸汽
     sleep 1
     G0="$(TANK "$REAC" 1)"; W0="$(TANK "$REAC" 0)"
-    RCON "cerdev fill $REAC minecraft:water 5000" > /dev/null
+    ACC="$(RCON "cerdev fill $REAC minecraft:water 5000" | grep -oE '[0-9]+' | tail -1)"
+    [ -n "$ACC" ] || ACC=0
     sleep 8
     G1="$(TANK "$REAC" 1)"; W1="$(TANK "$REAC" 0)"
     RCON "cerdev drain $REAC 200000" > /dev/null
     G2="$(TANK "$REAC" 1)"; W2="$(TANK "$REAC" 0)"
     D=$((G1 - G0))            # 蒸汽增量
-    C=$((W0 + 5000 - W1))     # 实际消耗水量
+    C=$((W0 + ACC - W1))      # 实际消耗水量（按实际接受量计，含上轮剩水）
     BAD=""
-    [ "$D" -gt 5000 ] && BAD="无中生有 D=$D>5000"
+    [ "$D" -gt "$C" ] && BAD="无中生有 D=$D>C=$C"
     LAW="$(awk -v c="$C" -v d="$D" 'BEGIN{lo=0.85*c-200; hi=0.85*c+1; print (d>=lo && d<=hi) ? "ok" : "bad"}')"
     [ "$LAW" == "ok" ] || BAD="$BAD 0.85律破坏 D=$D C=$C"
-    { [ "$G2" != "0" ] || [ "$W2" != "0" ]; } && BAD="$BAD 排空不完备 G2=$G2 W2=$W2"
+    [ "$G2" != "0" ] && BAD="$BAD 蒸汽排空不完备 G2=$G2"
+    [ "$W2" != "$W1" ] && BAD="$BAD 冷却水被 drain 改动 W1=$W1 W2=$W2"
     if [ -n "$BAD" ]; then VIOL=$((VIOL+1)); echo "  第 $i 轮: $BAD"; fi
 done
 check "P5 违规次数" 0 "$VIOL"

@@ -4,6 +4,7 @@ import com.compact.extremereactor.common.Content;
 import com.compact.extremereactor.common.config.CompactConfig;
 import com.compact.extremereactor.common.network.ModPackets;
 import com.compact.extremereactor.common.tile.AbstractCompactMachineTileEntity;
+import com.compact.extremereactor.common.tile.CompactFluidizerTileEntity;
 import com.compact.extremereactor.common.tile.CompactReactorTileEntity;
 import com.compact.extremereactor.common.tile.CompactTurbineTileEntity;
 import net.neoforged.bus.api.IEventBus;
@@ -91,5 +92,12 @@ public final class CompactExtremeReactor {
                 CompactTurbineTileEntity::getEnergyStorage);
         event.registerBlockEntity(Capabilities.FluidHandler.BLOCK, Content.COMPACT_TURBINE_ENTITY.get(),
                 CompactTurbineTileEntity::getFluidHandler);
+        // 流化器：能量只进不出（CompactEnergySink）+ 流体进料/产物 + 固体原料物品
+        event.registerBlockEntity(Capabilities.EnergyStorage.BLOCK, Content.COMPACT_FLUIDIZER_ENTITY.get(),
+                CompactFluidizerTileEntity::getEnergyStorage);
+        event.registerBlockEntity(Capabilities.FluidHandler.BLOCK, Content.COMPACT_FLUIDIZER_ENTITY.get(),
+                CompactFluidizerTileEntity::getFluidHandler);
+        event.registerBlockEntity(Capabilities.ItemHandler.BLOCK, Content.COMPACT_FLUIDIZER_ENTITY.get(),
+                CompactFluidizerTileEntity::getItemHandler);
     }
 }

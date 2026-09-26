@@ -117,6 +117,17 @@ public final class CompactExtremeReactor {
                     }
                 });
             }
+            // 流化器特有：物品能力（固体原料进料）+ 能量改为只进不出（CompactEnergySink）
+            if (tile instanceof com.compact.extremereactor.common.tile.CompactFluidizerTileEntity fluidizerTile) {
+                event.addCapability(new ResourceLocation(MODID, "item"), new ICapabilityProvider() {
+                    @Override
+                    public <T> LazyOptional<T> getCapability(Capability<T> capability, @Nullable Direction side) {
+                        return capability == ForgeCapabilities.ITEM_HANDLER
+                                ? fluidizerTile.getItemCapability(side).cast()
+                                : LazyOptional.empty();
+                    }
+                });
+            }
         }
     }
 }

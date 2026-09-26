@@ -100,30 +100,26 @@
 ## 📁 项目结构
 
 ```
+build.gradle                    # Stonecutter 共享构建脚本
+stonecutter.gradle.kts          # 激活版本切换
+libs/                           # 本地 ER / ZeroCore 依赖
+tools/
+└── soak-test.sh               # 基于 RCON 的浸泡回归测试
 versions/<mc>/                 # 各版本源码（1.20.1、1.21.1）
 ├── gradle.properties          # 该 MC 版本的 loader / 依赖版本
 └── src/main/
     ├── java/com/compact/extremereactor/
-    │   ├── CompactExtremeReactor.java  # 主类：能力注册、payload 注册、配置
-    │   ├── client/
-    │   │   ├── ClientHandler.java      # 客户端 GUI 屏幕注册
-    │   │   └── screen/                 # 反应堆 / 涡轮机 GUI
-    │   ├── common/
-    │   │   ├── Content.java            # 方块/物品/方块实体/菜单注册表
-    │   │   ├── block/                  # 方块类（GUI 打开、TileEntity 绑定）
-    │   │   ├── capability/             # 能量/流体能力包装
-    │   │   ├── config/CompactConfig.java # 模拟参数配置
-    │   │   ├── menu/                   # 容器（数据槽同步 + 燃料自动注入）
-    │   │   ├── multiblock/             # 模拟控制器（核心：ER 控制器子类）
-    │   │   ├── network/ModPackets.java # C2S 控制指令数据包
-    │   │   └── tile/                   # TileEntity（控制器生命周期/NBT/能力）
-    │   └── resources/
-    │       ├── assets/                 # 模型/语言（en_us/zh_cn）/方块状态
-    │       ├── data/                   # 战利品表/合成配方
-    │       └── templates/META-INF/mods.toml # 模组元数据模板（构建时展开）
-├── build.gradle               # 共享构建脚本（仓库根目录）
-└── stonecutter.gradle.kts     # 激活版本切换
+    │   ├── CompactExtremeReactor.java  # 模组入口
+    │   ├── client/             # GUI 与客户端注册
+    │   └── common/             # 方块、能力、配置、集成、菜单、
+    │                           # 模拟控制器、网络、方块实体
+    ├── resources/
+    │   ├── assets/             # 模型、纹理、语言、方块状态
+    │   └── data/               # 战利品表与合成配方
+    └── templates/META-INF/    # 模组元数据模板（构建时展开）
 ```
+
+启动开发服务器并备好本地 `rcon-port.ps1` 后，可在仓库根目录执行 `bash tools/soak-test.sh`。运行目录和浸泡日志由 Git 忽略。
 
 ## 🙏 致谢
 

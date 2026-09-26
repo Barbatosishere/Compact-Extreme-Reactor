@@ -91,6 +91,22 @@ public enum CompactMachineProvider implements IBlockComponentProvider {
         if (water > 0) {
             tooltip.add(Component.translatable("gui.compactextremereactor.water", water));
         }
+
+        // 流化器：配方模式 / 进度 / 产物量
+        if (data.contains("RecipeMode")) {
+            final String modeName = data.getString("RecipeMode");
+            tooltip.add(Component.translatable("gui.compactextremereactor.fluidizer_mode",
+                    Component.translatable("gui.compactextremereactor.fluidizer_mode_" + modeName.toLowerCase())));
+            final int progress = data.getInt("Progress");
+            if (progress > 0) {
+                tooltip.add(Component.translatable("gui.compactextremereactor.fluidizer_progress", progress));
+            }
+            final int output = data.getInt("FluidizerOutput");
+            if (output > 0) {
+                tooltip.add(Component.translatable("gui.compactextremereactor.fluidizer_output",
+                        output, data.getInt("FluidizerOutputCapacity")));
+            }
+        }
     }
 
     private String formatEnergy(long energy, long capacity) {
@@ -164,6 +180,15 @@ public enum CompactMachineProvider implements IBlockComponentProvider {
                 if (tile instanceof CompactTurbineTileEntity turbineTile) {
                     tag.putInt("Steam", controller.getFluidContainer().getGasAmount());
                     tag.putInt("Water", controller.getFluidContainer().getLiquidAmount());
+                }
+
+                // 流化器特有数据
+                if (tile instanceof com.compact.extremereactor.common.tile.CompactFluidizerTileEntity fluidizerTile
+                        && controller instanceof com.compact.extremereactor.common.multiblock.CompactFluidizerController fluidizer) {
+                    tag.putInt("FluidizerOutput", fluidizer.getOutputTank().getFluidInTank(0).getAmount());
+                    tag.putInt("FluidizerOutputCapacity", fluidizer.getOutputTank().getTankCapacity(0));
+                    tag.putString("RecipeMode", fluidizer.getRecipeMode().name());
+                    tag.putInt("Progress", (int) Math.round(fluidizer.getRecipeProgress() * 100.0d));
                 }
             } catch (Throwable t) {
                 CompactExtremeReactor.LOGGER.warn("Jade appendServerData 异常 @{}", tile.getBlockPos(), t);
