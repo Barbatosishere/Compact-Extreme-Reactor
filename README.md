@@ -100,30 +100,26 @@ Artifacts are at `versions/<mc>/build/libs/compactextremereactor-<version>-<Load
 ## 📁 Project layout
 
 ```
+build.gradle                    # shared Stonecutter build script
+stonecutter.gradle.kts          # active version switch
+libs/                           # local ER / ZeroCore dependencies
+tools/
+└── soak-test.sh               # RCON-based soak regression test
 versions/<mc>/                 # per-version sources (1.20.1, 1.21.1)
 ├── gradle.properties          # loader / dependency versions for this MC
 └── src/main/
     ├── java/com/compact/extremereactor/
-    │   ├── CompactExtremeReactor.java  # Main class: capability/payload registration, config
-    │   ├── client/
-    │   │   ├── ClientHandler.java      # Client screen registration
-    │   │   └── screen/                 # Reactor / Turbine GUIs
-    │   ├── common/
-    │   │   ├── Content.java            # Block/Item/BE/Menu registry
-    │   │   ├── block/                  # Block classes (GUI open, BE binding)
-    │   │   ├── capability/             # Energy / fluid capability wrappers
-    │   │   ├── config/CompactConfig.java # Simulation parameters
-    │   │   ├── menu/                   # Containers (data-slot sync + auto fuel injection)
-    │   │   ├── multiblock/             # Simulated controllers (core: ER controller subclasses)
-    │   │   ├── network/ModPackets.java # C2S control payloads
-    │   │   └── tile/                   # TileEntities (controller lifecycle/NBT/capabilities)
-    │   └── resources/
-    │       ├── assets/                 # Models / lang (en_us, zh_cn) / blockstates
-    │       ├── data/                   # Loot tables / recipes
-    │       └── templates/META-INF/mods.toml # Mod metadata template (expanded at build)
-├── build.gradle               # shared build script (repo root)
-└── stonecutter.gradle.kts     # active version switch
+    │   ├── CompactExtremeReactor.java  # Mod entry point
+    │   ├── client/             # Screens and client registration
+    │   └── common/             # Blocks, capabilities, config, integration,
+    │                           # menus, controllers, network, block entities
+    ├── resources/
+    │   ├── assets/             # Models, textures, languages, blockstates
+    │   └── data/               # Loot tables and recipes
+    └── templates/META-INF/    # Mod metadata template (expanded at build)
 ```
+
+From the repository root, run `bash tools/soak-test.sh` after starting the development server and providing the local `rcon-port.ps1` helper. Generated run directories and soak logs are ignored by Git.
 
 ## 🙏 Credits
 

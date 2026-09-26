@@ -14,6 +14,8 @@ bin/
 
 # Minecraft / NeoForge 运行环境（本地生成，不提交）
 run/
+versions/*/runclient*/
+versions/*/libs-remapped/
 logs/
 crash-reports/
 prodtest/
@@ -45,3 +47,4 @@ neoforge-*.log
 forge-client.log
 server_run_*.log
 soak-result*.txt
+soak-run-*.log
