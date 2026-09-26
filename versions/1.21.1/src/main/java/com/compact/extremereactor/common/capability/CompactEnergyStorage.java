@@ -43,6 +43,17 @@ public class CompactEnergyStorage implements IEnergyStorage {
         return this._released ? null : this._delegate.get();
     }
 
+    /** 子类（如 {@link CompactEnergySink}）判断失效状态。 */
+    protected boolean isReleased() {
+        return this._released;
+    }
+
+    /** 子类访问延迟解析的控制器委托。 */
+    @Nullable
+    protected IWideEnergyStorage2 delegateForSubclass() {
+        return this.delegate();
+    }
+
     @Override
     public int receiveEnergy(int maxReceive, boolean simulate) {
         // 发电机不接受能量输入

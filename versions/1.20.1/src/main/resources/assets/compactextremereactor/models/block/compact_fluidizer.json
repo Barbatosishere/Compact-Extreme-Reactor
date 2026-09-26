@@ -1,0 +1,12 @@
+{
+  "parent": "minecraft:block/cube",
+  "textures": {
+    "particle": "compactextremereactor:block/compact_fluidizer_side",
+    "down": "compactextremereactor:block/compact_fluidizer_bottom",
+    "up": "compactextremereactor:block/compact_fluidizer_top",
+    "north": "compactextremereactor:block/compact_fluidizer_front",
+    "south": "compactextremereactor:block/compact_fluidizer_front",
+    "east": "compactextremereactor:block/compact_fluidizer_side",
+    "west": "compactextremereactor:block/compact_fluidizer_side"
+  }
+}

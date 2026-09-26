@@ -5,6 +5,41 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1-beta1] - 2026-09-19
+
+### Added
+
+- **流体机（Fluidizer）单方块机（双端）** — 将 ER2 的 Fluidizer 多方块压缩为单方块：固体/流体输入、产出流体缓存、合成进度条、运行模式显示（Solid / Solid + Mixing / Fluid + Mixing）、能量输入与开关按钮；配套方块材质、GUI 图集、创造物品栏注册、Jade 集成与 lang 文本。1.20.1 与 1.21.1 双端 GUI 渲染与开关按钮均实测验证（NBT `active` 翻转与 GUI 状态同步）。
+- **FE 缓存满仓自动停产（双端）** — 机器能量缓冲存满时自动停止生产，FE 抽出后自动恢复；GUI 与 Jade 同步显示"能量已满"状态。
+- **dev 指令扩展（仅开发环境）** — `/cerdev energy fill/extract`（填充/抽取机器能量缓冲）、`dump` 输出 `energyFull`、`/cerdev item <pos> <item> <count>`（向机器注入物品）、`/cerdev opengui <pos> <player>`（为在线玩家打开机器 GUI）。
+- **浸泡回归扩展** — `soak-test.sh` 新增 P7 废液隔离与 P8 FE 满仓停机两个阶段。
+
+### Fixed
+
+- **1.21.1 配方与战利品表死路径（致命，自 1.21.1 支持以来）** — Minecraft 1.21 起数据包目录改为单数：`recipes/` → `recipe/`、`loot_tables/blocks/` → `loot_table/blocks/`。本模组 1.21.1 资源一直使用复数路径，导致 1.21.1 上三台机器全部无法合成且挖掘无掉落。已迁移到单数路径。判定依据：NeoForge 21.1.207 反编译源码（`RecipeManager` 经 `Registries.elementsDirPath(Registries.RECIPE)` 扫描单数 `recipe/`，`RegistryDataLoader` 对 `Registries.LOOT_TABLE` 同理，均无复数回退）+ 原版 1.21.1 client jar（`data/minecraft/recipe/` 含全部原版配方，`data/minecraft/recipes/` 为 0 文件）双重实证。注：ER2 官方 1.21.1 jar 自身的配方也位于死路径（上游问题，与本模组无关，不影响本模组配方对 ER2 方块物品的引用）。
+- **流体机配方与掉落表缺失（双端）** — 流体机此前无合成配方、无掉落表（生存模式不可获得、挖掘不掉落）。已按反应堆/涡轮机同款模式补齐：8× `bigreactors:fluidizercasing` + 1× `bigreactors:fluidizercontroller` 合成，破坏后掉落自身（1.20.1 复数路径 / 1.21.1 单数路径各一份）。
+
+### Changed
+
+- Mod 元数据描述更新为包含 Fluidizer（Reactor, Turbine, Fluidizer）。
+- Mod version bumped to `1.0.1-beta1`.
+
+## [1.0.0] - 2026-09-11
+
+### Added
+
+- 自研方块材质与 GUI 图集接入，反应堆/涡轮机界面重排版（双端）。
+
+### Fixed
+
+- 废液反应物支持经流体管道抽出（双端）。
+- 两个物品 handler 对负数插入结果的防护（双端）。
+- PR 审查发现的 4 个问题修复（双端）。
+
+### Changed
+
+- Mod version bumped to `1.0.0`.
+
 ## [1.0.0-beta17] - 2026-09-02
 
 ### Fixed

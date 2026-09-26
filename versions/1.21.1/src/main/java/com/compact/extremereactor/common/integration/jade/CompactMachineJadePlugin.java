@@ -1,6 +1,7 @@
 package com.compact.extremereactor.common.integration.jade;
 
 import com.compact.extremereactor.CompactExtremeReactor;
+import com.compact.extremereactor.common.block.CompactFluidizerBlock;
 import com.compact.extremereactor.common.block.CompactReactorBlock;
 import com.compact.extremereactor.common.block.CompactTurbineBlock;
 import snownee.jade.api.IWailaClientRegistration;
@@ -29,6 +30,9 @@ public class CompactMachineJadePlugin implements IWailaPlugin {
             registration.registerBlockDataProvider(
                     CompactMachineProvider.ServerProvider.INSTANCE,
                     CompactTurbineBlock.class);
+            registration.registerBlockDataProvider(
+                    CompactMachineProvider.ServerProvider.INSTANCE,
+                    CompactFluidizerBlock.class);
         } catch (Throwable t) {
             CompactExtremeReactor.LOGGER.warn("Jade 服务端注册失败（API 不兼容？），HUD 集成已禁用", t);
         }
@@ -44,6 +48,9 @@ public class CompactMachineJadePlugin implements IWailaPlugin {
             registration.registerBlockComponent(
                     CompactMachineProvider.INSTANCE,
                     CompactTurbineBlock.class);
+            registration.registerBlockComponent(
+                    CompactMachineProvider.INSTANCE,
+                    CompactFluidizerBlock.class);
         } catch (Throwable t) {
             CompactExtremeReactor.LOGGER.warn("Jade 客户端注册失败（API 不兼容？），HUD 集成已禁用", t);
         }

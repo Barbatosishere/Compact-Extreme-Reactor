@@ -1,6 +1,7 @@
 package com.compact.extremereactor.client;
 
 import com.compact.extremereactor.common.Content;
+import com.compact.extremereactor.client.screen.CompactFluidizerScreen;
 import com.compact.extremereactor.client.screen.CompactReactorScreen;
 import com.compact.extremereactor.client.screen.CompactTurbineScreen;
 import net.minecraft.client.gui.screens.MenuScreens;
@@ -24,6 +25,7 @@ public final class ClientHandler {
         event.enqueueWork(() -> {
             MenuScreens.register(Content.COMPACT_REACTOR_MENU.get(), CompactReactorScreen::new);
             MenuScreens.register(Content.COMPACT_TURBINE_MENU.get(), CompactTurbineScreen::new);
+            MenuScreens.register(Content.COMPACT_FLUIDIZER_MENU.get(), CompactFluidizerScreen::new);
         });
     }
 }

@@ -32,6 +32,8 @@ public final class ModPackets {
     /** 机器动作类型（编码为 int 便于用 VAR_INT 传输）。 */
     public static final int ACTION_TOGGLE_ACTIVE = 0;
     public static final int ACTION_VOID_WASTE = 1;
+    /** 流化器：清空全部进料（物品槽 + 流体罐）。 */
+    public static final int ACTION_CLEAR_INPUTS = 2;
 
     // ------------------------------------------------------------------
     // 包频率限速（DoS 防御）
@@ -49,6 +51,8 @@ public final class ModPackets {
             new java.util.concurrent.ConcurrentHashMap<>();
     private static final java.util.concurrent.ConcurrentMap<java.util.UUID, Long> _lastVoidWasteTick =
             new java.util.concurrent.ConcurrentHashMap<>();
+    private static final java.util.concurrent.ConcurrentMap<java.util.UUID, Long> _lastClearInputsTick =
+            new java.util.concurrent.ConcurrentHashMap<>();
     private static final int ROD_PACKET_INTERVAL_TICKS = 1;
     private static final int ACTION_PACKET_INTERVAL_TICKS = 5;
 
@@ -63,6 +67,7 @@ public final class ModPackets {
         _lastControlRodTick.remove(id);
         _lastToggleTick.remove(id);
         _lastVoidWasteTick.remove(id);
+        _lastClearInputsTick.remove(id);
     }
 
     // ------------------------------------------------------------------
@@ -171,6 +176,8 @@ public final class ModPackets {
             actionTicks = _lastToggleTick;
         } else if (payload.action() == ACTION_VOID_WASTE) {
             actionTicks = _lastVoidWasteTick;
+        } else if (payload.action() == ACTION_CLEAR_INPUTS) {
+            actionTicks = _lastClearInputsTick;
         } else {
             CompactExtremeReactor.LOGGER.debug("未知机器动作 {} @ {}，已忽略",
                     payload.action(), payload.pos());
@@ -189,10 +196,21 @@ public final class ModPackets {
         if (!(player.level().getBlockEntity(payload.pos()) instanceof AbstractCompactMachineTileEntity tile)) {
             return;
         }
-        if (!(player.containerMenu instanceof CompactReactorMenu menu)
-                || !(tile instanceof CompactReactorTileEntity reactorTile)
-                || !menu.isForTile(reactorTile)
-                || menu.getData(CompactReactorMenu.DATA_POS_READY) != 1) {
+        // 菜单与方块类型必须匹配：反应堆 GUI 只能操作反应堆，流化器 GUI 只能操作流化器
+        // （防止用 A 机器的菜单会话操控 B 机器；涡轮机 GUI 无开关，toggle 包在下方统一拒绝）
+        final boolean menuMatches;
+        if (player.containerMenu instanceof CompactReactorMenu reactorMenu) {
+            menuMatches = tile instanceof CompactReactorTileEntity reactorTile
+                    && reactorMenu.isForTile(reactorTile)
+                    && reactorMenu.getData(CompactReactorMenu.DATA_POS_READY) == 1;
+        } else if (player.containerMenu instanceof com.compact.extremereactor.common.menu.CompactFluidizerMenu fluidizerMenu) {
+            menuMatches = tile instanceof com.compact.extremereactor.common.tile.CompactFluidizerTileEntity fluidizerTile
+                    && fluidizerMenu.isForTile(fluidizerTile)
+                    && fluidizerMenu.getData(com.compact.extremereactor.common.menu.CompactFluidizerMenu.DATA_POS_READY) == 1;
+        } else {
+            menuMatches = false;
+        }
+        if (!menuMatches) {
             return;
         }
         if (player.distanceToSqr(payload.pos().getCenter()) >= 64) {
@@ -232,6 +250,13 @@ public final class ModPackets {
                     if (cleared > 0) {
                         CompactExtremeReactor.LOGGER.debug("压缩反应堆清除废料 {} 单位 @ {}", cleared, payload.pos());
                     }
+                }
+            }
+            case ACTION_CLEAR_INPUTS -> {
+                if (controller instanceof com.compact.extremereactor.common.multiblock.CompactFluidizerController fluidizer) {
+                    fluidizer.clearInputs();
+                    tile.setChanged();
+                    CompactExtremeReactor.LOGGER.debug("压缩流化器清空进料 @ {}", payload.pos());
                 }
             }
             default -> {

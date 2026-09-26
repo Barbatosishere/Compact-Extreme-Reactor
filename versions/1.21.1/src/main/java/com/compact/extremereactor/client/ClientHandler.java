@@ -1,6 +1,7 @@
 package com.compact.extremereactor.client;
 
 import com.compact.extremereactor.common.Content;
+import com.compact.extremereactor.client.screen.CompactFluidizerScreen;
 import com.compact.extremereactor.client.screen.CompactReactorScreen;
 import com.compact.extremereactor.client.screen.CompactTurbineScreen;
 import net.neoforged.neoforge.client.event.RegisterMenuScreensEvent;
@@ -19,5 +20,6 @@ public final class ClientHandler {
     public static void registerScreens(RegisterMenuScreensEvent event) {
         event.register(Content.COMPACT_REACTOR_MENU.get(), CompactReactorScreen::new);
         event.register(Content.COMPACT_TURBINE_MENU.get(), CompactTurbineScreen::new);
+        event.register(Content.COMPACT_FLUIDIZER_MENU.get(), CompactFluidizerScreen::new);
     }
 }

@@ -3,9 +3,11 @@ package com.compact.extremereactor.common.command;
 import com.compact.extremereactor.CompactExtremeReactor;
 import com.compact.extremereactor.common.capability.CompactEnergyStorage;
 import com.compact.extremereactor.common.config.CompactConfig;
+import com.compact.extremereactor.common.multiblock.CompactFluidizerController;
 import com.compact.extremereactor.common.multiblock.CompactReactorController;
 import com.compact.extremereactor.common.multiblock.CompactTurbineController;
 import com.compact.extremereactor.common.tile.AbstractCompactMachineTileEntity;
+import com.compact.extremereactor.common.tile.CompactFluidizerTileEntity;
 import com.compact.extremereactor.common.tile.CompactReactorTileEntity;
 import com.compact.extremereactor.common.tile.CompactTurbineTileEntity;
 import com.mojang.brigadier.CommandDispatcher;
@@ -153,6 +155,36 @@ public final class DevCommands {
         dispatcher.register(Commands.literal("cerdev")
                 .requires(source -> source.hasPermission(2))
                 .then(Commands.literal("waste").then(wastePos)));
+
+        // item：走真实物品能力路径插入物品（流化器固体进料诊断；item 必填，count 可选默认 1）。
+        final var itemPos = Commands.argument("pos", BlockPosArgument.blockPos());
+        final var itemArg = Commands.argument("item", ResourceLocationArgument.id());
+        itemArg.executes(ctx -> devItem(ctx.getSource(),
+                BlockPosArgument.getLoadedBlockPos(ctx, "pos"),
+                ResourceLocationArgument.getId(ctx, "item"), 1));
+        final var itemCount = Commands.argument("count", com.mojang.brigadier.arguments.IntegerArgumentType.integer(1));
+        itemCount.executes(ctx -> devItem(ctx.getSource(),
+                BlockPosArgument.getLoadedBlockPos(ctx, "pos"),
+                ResourceLocationArgument.getId(ctx, "item"),
+                com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(ctx, "count")));
+        itemArg.then(itemCount);
+        itemPos.then(itemArg);
+        dispatcher.register(Commands.literal("cerdev")
+                .requires(source -> source.hasPermission(2))
+                .then(Commands.literal("item").then(itemPos)));
+
+        // opengui：为在线玩家远程打开机器菜单（与右键相同的 openMenu 路径；自动化客户端诊断用）。
+        final var openPos = Commands.argument("pos", BlockPosArgument.blockPos());
+        openPos.executes(ctx -> devOpenGui(ctx.getSource(),
+                BlockPosArgument.getLoadedBlockPos(ctx, "pos"),
+                ctx.getSource().getPlayerOrException().getGameProfile().getName()));
+        openPos.then(Commands.argument("player", com.mojang.brigadier.arguments.StringArgumentType.word())
+                .executes(ctx -> devOpenGui(ctx.getSource(),
+                        BlockPosArgument.getLoadedBlockPos(ctx, "pos"),
+                        com.mojang.brigadier.arguments.StringArgumentType.getString(ctx, "player"))));
+        dispatcher.register(Commands.literal("cerdev")
+                .requires(source -> source.hasPermission(2))
+                .then(Commands.literal("opengui").then(openPos)));
         CompactExtremeReactor.LOGGER.info("cerdev 诊断指令已注册（仅开发环境）");
     }
 
@@ -454,8 +486,36 @@ public final class DevCommands {
                 source.sendFailure(Component.literal("dump 反射失败: " + e));
             }
         }
+
+        // 4) 流化器专属：模式 / 进度 / 进料 / 产物（ASCII 输出，RCON 中文会变 ?）
+        if (controller instanceof CompactFluidizerController fluidizer) {
+            feedback(source, "fz mode=%s progress=%.3f tick=%d mult=%d".formatted(
+                    fluidizer.getRecipeMode(), fluidizer.getRecipeProgress(),
+                    fluidizer.getCurrentTick(), fluidizer.getEnergyUsageMultiplier()));
+            feedback(source, "fz item0=%s item1=%s".formatted(
+                    fzItemToken(fluidizer.getInputItemAt(0)), fzItemToken(fluidizer.getInputItemAt(1))));
+            feedback(source, "fz fin0=%s fin1=%s".formatted(
+                    fzFluidToken(fluidizer.getInputFluidAt(0)), fzFluidToken(fluidizer.getInputFluidAt(1))));
+            feedback(source, "fz out=%s (cap %d)".formatted(
+                    fzFluidToken(fluidizer.getOutputTank().getFluidInTank(0)),
+                    fluidizer.getOutputTank().getTankCapacity(0)));
+        }
         feedback(source, "=== end dump ===");
         return 1;
+    }
+
+    /** 流化器 dump 物品 token（ASCII）：empty 或 <item> x<count>。 */
+    private static String fzItemToken(net.minecraft.world.item.ItemStack stack) {
+        return stack.isEmpty()
+                ? "empty"
+                : BuiltInRegistries.ITEM.getKey(stack.getItem()) + " x" + stack.getCount();
+    }
+
+    /** 流化器 dump 流体 token（ASCII）：empty 或 <fluid> x<amount>。 */
+    private static String fzFluidToken(FluidStack stack) {
+        return stack.isEmpty()
+                ? "empty"
+                : BuiltInRegistries.FLUID.getKey(stack.getFluid()) + " x" + stack.getAmount();
     }
 
     /** Coolant.EMPTY / Vapor.EMPTY 判定：调用静态 EMPTY 字段做引用比较。 */
@@ -499,6 +559,84 @@ public final class DevCommands {
             }
             default -> feedback(source, "rods: 当前插入比例 %d".formatted(reactor.getControlRodInsertionRatio()));
         }
+        return 1;
+    }
+
+    /** item：走真实物品能力路径插入物品（逐槽尝试，与方块右键路径一致；ASCII 输出供 RCON）。 */
+    private static int devItem(CommandSourceStack source, BlockPos pos, ResourceLocation itemId, int count) {
+        final AbstractCompactMachineTileEntity tile = machineTile(source.getLevel(), pos);
+        if (tile == null) {
+            source.sendFailure(Component.literal("目标不是压缩机器"));
+            return 0;
+        }
+        final net.minecraft.world.item.Item item = BuiltInRegistries.ITEM.get(itemId);
+        if (item == net.minecraft.world.item.Items.AIR) {
+            source.sendFailure(Component.literal("未知物品: " + itemId));
+            return 0;
+        }
+        final net.neoforged.neoforge.items.IItemHandler items;
+        if (tile instanceof CompactReactorTileEntity reactor) {
+            items = reactor.getItemHandler(null);
+        } else if (tile instanceof CompactFluidizerTileEntity fluidizer) {
+            items = fluidizer.getItemHandler(null);
+        } else {
+            items = null;
+        }
+        if (items == null) {
+            source.sendFailure(Component.literal("目标机器无物品能力"));
+            return 0;
+        }
+        // 逐槽尝试 + 槽内重试：底层 ItemStackHolder.insertItem 槽位严格且容量派生自
+        // 槽内现有物品（空槽先收 1 个），与方块右键路径逻辑一致
+        net.minecraft.world.item.ItemStack remainder = new net.minecraft.world.item.ItemStack(item, count);
+        for (int slot = 0; slot < items.getSlots() && !remainder.isEmpty(); slot++) {
+            net.minecraft.world.item.ItemStack previous;
+            do {
+                previous = remainder;
+                remainder = items.insertItem(slot, remainder, false);
+            } while (!remainder.isEmpty() && remainder.getCount() < previous.getCount());
+        }
+        final int inserted = count - remainder.getCount();
+        feedback(source, "item %s: request=%d inserted=%d slot0=%d slot1=%d".formatted(
+                itemId, count, inserted,
+                items.getStackInSlot(0).getCount(),
+                items.getSlots() > 1 ? items.getStackInSlot(1).getCount() : -1));
+        return inserted > 0 ? 1 : 0;
+    }
+
+    /** opengui：为在线玩家远程打开机器菜单（与右键相同的 openMenu 网络路径）。 */
+    private static int devOpenGui(CommandSourceStack source, BlockPos pos, String playerName) {
+        final AbstractCompactMachineTileEntity tile = machineTile(source.getLevel(), pos);
+        if (tile == null) {
+            source.sendFailure(Component.literal("目标不是压缩机器"));
+            return 0;
+        }
+        final net.minecraft.server.level.ServerPlayer player =
+                source.getServer().getPlayerList().getPlayerByName(playerName);
+        if (player == null) {
+            source.sendFailure(Component.literal("玩家不在线: " + playerName));
+            return 0;
+        }
+        final net.minecraft.world.MenuProvider provider;
+        if (tile instanceof CompactReactorTileEntity reactor) {
+            provider = new net.minecraft.world.SimpleMenuProvider(
+                    (id, inventory, p) -> new com.compact.extremereactor.common.menu.CompactReactorMenu(id, inventory, reactor),
+                    tile.getBlockState().getBlock().getName());
+        } else if (tile instanceof CompactTurbineTileEntity turbine) {
+            provider = new net.minecraft.world.SimpleMenuProvider(
+                    (id, inventory, p) -> new com.compact.extremereactor.common.menu.CompactTurbineMenu(id, inventory, turbine),
+                    tile.getBlockState().getBlock().getName());
+        } else if (tile instanceof CompactFluidizerTileEntity fluidizer) {
+            provider = new net.minecraft.world.SimpleMenuProvider(
+                    (id, inventory, p) -> new com.compact.extremereactor.common.menu.CompactFluidizerMenu(id, inventory, fluidizer),
+                    tile.getBlockState().getBlock().getName());
+        } else {
+            source.sendFailure(Component.literal("未知机器类型"));
+            return 0;
+        }
+        player.openMenu(provider);
+        feedback(source, "opengui %s -> %s @ %s".formatted(
+                tile.getBlockState().getBlock(), playerName, pos.toShortString()));
         return 1;
     }
 

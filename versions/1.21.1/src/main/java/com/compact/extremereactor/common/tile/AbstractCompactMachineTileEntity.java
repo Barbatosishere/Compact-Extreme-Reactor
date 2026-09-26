@@ -517,9 +517,14 @@ public abstract class AbstractCompactMachineTileEntity extends BlockEntity {
         }
         this.enqueuePendingInit();
         if (this._energyStorage == null) {
-            this._energyStorage = new CompactEnergyStorage(() -> this._controller);
+            this._energyStorage = this.createEnergyStorage();
         }
         return this._energyStorage;
+    }
+
+    /** 创建能量能力包装（子类覆写：流化器是能量消费方，需返回 {@link com.compact.extremereactor.common.capability.CompactEnergySink}）。 */
+    protected CompactEnergyStorage createEnergyStorage() {
+        return new CompactEnergyStorage(() -> this._controller);
     }
 
     /** 流体能力（由 RegisterCapabilitiesEvent 注册，见主类）。 */
