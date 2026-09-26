@@ -441,6 +441,10 @@ public abstract class AbstractCompactMachineTileEntity extends BlockEntity {
 
     /** 模拟 PowerTap 输出：向 6 个相邻方块的 IEnergyStorage 能力推送能量。 */
     protected void pushPower(ICompactController controller) {
+        if (controller.extractEnergy(EnergySystem.ForgeEnergy,
+                POWER_TRANSFER_AMOUNT, OperationMode.Simulate).isZero()) {
+            return;
+        }
         for (Direction dir : DIRS) {
             final BlockPos neighborPos = this.worldPosition.relative(dir);
             if (!this.level.isLoaded(neighborPos)) {

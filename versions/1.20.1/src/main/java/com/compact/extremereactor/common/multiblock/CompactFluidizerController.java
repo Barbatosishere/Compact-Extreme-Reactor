@@ -248,12 +248,16 @@ public class CompactFluidizerController
 
     /** 固体进料槽预览堆（槽 0 / 1）。 */
     public ItemStack getInputItemAt(int slot) {
-        return this._itemInputs.getStackAt(Math.max(0, Math.min(1, slot)));
+        return slot >= 0 && slot < 2 ? this._itemInputs.getStackAt(slot) : ItemStack.EMPTY;
     }
 
     /** 流体进料罐内容（罐 0 / 1）。 */
     public FluidStack getInputFluidAt(int tank) {
-        return tank == 0 ? this._fluidInputs0.getFluidInTank(0) : this._fluidInputs1.getFluidInTank(0);
+        return switch (tank) {
+            case 0 -> this._fluidInputs0.getFluidInTank(0);
+            case 1 -> this._fluidInputs1.getFluidInTank(0);
+            default -> FluidStack.EMPTY;
+        };
     }
 
     /** 清空全部进料（GUI"清空进料"按钮 / 诊断指令）。 */
@@ -262,11 +266,17 @@ public class CompactFluidizerController
         this._itemInputs.setStackInSlot(1, ItemStack.EMPTY);
         this._fluidInputs0.setStackAt(0, FluidStack.EMPTY);
         this._fluidInputs1.setStackAt(0, FluidStack.EMPTY);
+        this._ingredientsChanged = true;
+        this._modeDirty = true;
+        this._solidHolder.invalidateRecipe();
+        this._solidMixingHolder.invalidateRecipe();
+        this._fluidMixingHolder.invalidateRecipe();
+        this.markChanged();
     }
 
     /** 固体进料槽容量上限（用于 GUI/管道校验展示）。 */
     public int getItemSlotCapacity(int slot) {
-        return this._itemInputs.getSlotLimit(Math.max(0, Math.min(1, slot)));
+        return slot >= 0 && slot < 2 ? this._itemInputs.getSlotLimit(slot) : 0;
     }
 
     // ------------------------------------------------------------------
@@ -414,17 +424,20 @@ public class CompactFluidizerController
     /** 配方能否处理一 tick（与 ER2 canProcessRecipe 语义一致）。 */
     private boolean canProcessRecipe(IFluidizerRecipe recipe) {
         return this.isMachineActive()
-                && this.areIngredientsAvailable()
+                && this.areIngredientsAvailable(recipe)
                 && this._energyBuffer.getEnergyStored().longValue() >= (long) Config.COMMON.fluidizer.energyPerRecipeTick.get()
                         * recipe.getEnergyUsageMultiplier()
                 && this._fluidTarget.countStorableResults(recipe.getResult()) > 0;
     }
 
-    private boolean areIngredientsAvailable() {
+    private boolean areIngredientsAvailable(IFluidizerRecipe recipe) {
         return switch (this._mode) {
-            case Solid -> !this.pickSolidSource().isEmpty();
-            case SolidMixing -> !this._itemInputs.isEmpty(0) && !this._itemInputs.isEmpty(1);
-            case FluidMixing -> !this._fluidInputs0.isEmpty(0) && !this._fluidInputs1.isEmpty(0);
+            case Solid -> recipe instanceof FluidizerSolidRecipe solid
+                    && solid.match(this.pickSolidSource().getIngredient());
+            case SolidMixing -> recipe instanceof FluidizerSolidMixingRecipe mixing
+                    && mixing.match(this._itemSources[0].getIngredient(), this._itemSources[1].getIngredient());
+            case FluidMixing -> recipe instanceof FluidizerFluidMixingRecipe mixing
+                    && mixing.match(this._fluidSources[0].getIngredient(), this._fluidSources[1].getIngredient());
             case Invalid -> false;
         };
     }
@@ -563,7 +576,8 @@ public class CompactFluidizerController
         this.syncChildDataEntityFrom(this._fluidInputs0, NBT_FLUID_IN_0, tag, reason);
         this.syncChildDataEntityFrom(this._fluidInputs1, NBT_FLUID_IN_1, tag, reason);
 
-        // 先 refresh 再恢复进度：refresh 按当前原料重建配方，之后把存档的 tick 计数灌入（与 ER2 顺序一致）
+        this.updateMode();
+        // 先确定模式，再 refresh 和恢复进度，避免首个 tick 切换模式时清除刚读入的进度。
         this._solidHolder.refresh();
         this.syncChildDataEntityFrom(this._solidHolder, NBT_RECIPE_SOLID, tag, reason);
         this._solidMixingHolder.refresh();
