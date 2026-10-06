@@ -96,6 +96,15 @@
 | `turbine.coilRadius` | 3 | 涡轮机线圈半径（1–16） |
 | `turbine.sizeX/Z` | 9 | 模拟涡轮机尺寸 |
 | `turbine.sizeY` | 11 | 涡轮机转轴高度（叶片数 = 层数 × 4） |
+| `fluidizer.sizeX/Y/Z` | 9 | 模拟流化器尺寸（3–32；输出罐容量 = 内部体积 × 4,000 mB） |
+
+修改流化器尺寸后需重启服务端。已有机器读档时采用新输出容量；缩容保留全部已有流体，生产会暂停，排出至可容纳一次完整配方产物后恢复。
+
+修改反应堆和涡轮机尺寸也需重启服务端。读档时能量缓冲采用新容量；缩容保留全部已有 FE，缓冲已满时暂停发电，已有能量仍可正常抽取。
+
+流化器读档保持固定 50,000 FE 容量和 1,000 FE 传输限额。已有超额能量继续保留并供配方消耗；储量低于容量前，拒绝继续输入能量。
+
+存档中的库存槽数不能改变流化器的两个物品槽和两个输入罐。读档保留合法槽中的原料，并忽略槽位编号缺失、非数字、非整数或越界的条目。
 
 ## 📁 项目结构
 
@@ -105,13 +114,15 @@ stonecutter.gradle.kts          # 激活版本切换
 libs/                           # 本地 ER / ZeroCore 依赖
 tools/
 └── soak-test.sh               # 基于 RCON 的浸泡回归测试
+src/main/java/com/compact/extremereactor/  # 双版本共享的 Java 源码
+└── common/menu/                # 三种机器菜单及整数拆分同步
 versions/<mc>/                 # 各版本源码（1.20.1、1.21.1）
 ├── gradle.properties          # 该 MC 版本的 loader / 依赖版本
 └── src/main/
     ├── java/com/compact/extremereactor/
     │   ├── CompactExtremeReactor.java  # 模组入口
     │   ├── client/             # GUI 与客户端注册
-    │   └── common/             # 方块、能力、配置、集成、菜单、
+    │   └── common/             # 方块、能力、配置、集成、
     │                           # 模拟控制器、网络、方块实体
     ├── resources/
     │   ├── assets/             # 模型、纹理、语言、方块状态

@@ -2,72 +2,69 @@ package com.compact.extremereactor.common.menu;
 
 import com.compact.extremereactor.common.Content;
 import com.compact.extremereactor.common.multiblock.ICompactController;
-import com.compact.extremereactor.common.tile.CompactReactorTileEntity;
+import com.compact.extremereactor.common.tile.CompactTurbineTileEntity;
 import it.zerono.mods.zerocore.lib.energy.EnergySystem;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ContainerData;
 import net.minecraft.world.inventory.SimpleContainerData;
 import net.minecraft.world.item.ItemStack;
 import org.jetbrains.annotations.Nullable;
 
 /**
- * 压缩极限反应堆容器：纯状态显示 + 控制棒调节（无燃料槽/玩家背包）。
- * 燃料通过右键点击方块直接注入。
+ * 压缩涡轮机容器：无槽位，纯状态显示（无玩家背包）。
+ * 蒸汽通过流体能力输入（玩家可用流体管道灌入），本容器只负责显示。
  *
  * 数据槽布局（逻辑数据由 PackedContainerData 拆成两个 16 位槽同步）：
- *   0-2: 方块坐标 X/Y/Z  3: 能量存储  4: 能量容量  5: 燃料量  6: 废物量
- *   7: 燃料容量  8: 控制棒插入比例  9: 激活状态  10: 发电量  11: 初始化失败
- *   12: 堆芯温度  13: posReady 标记  14: 控制器就绪标记
+ *   0-2: 方块坐标 X/Y/Z  3: 能量存储  4: 能量容量  5: 蒸汽量  6: 水量
+ *   7: 流体总容量  8: 发电量  9: 初始化失败  10: 转子转速
+ *   11: posReady 标记  12: 控制器就绪标记
  */
-public class CompactReactorMenu extends AbstractContainerMenu {
+public class CompactTurbineMenu extends AbstractCompactMachineMenu {
 
     public static final int DATA_POS_X = 0;
     public static final int DATA_POS_Y = 1;
     public static final int DATA_POS_Z = 2;
     public static final int DATA_ENERGY = 3;
     public static final int DATA_ENERGY_CAPACITY = 4;
-    public static final int DATA_FUEL = 5;
-    public static final int DATA_WASTE = 6;
-    public static final int DATA_FUEL_CAPACITY = 7;
-    // 废料与燃料共享同一容器容量，废物条渲染直接用 DATA_FUEL_CAPACITY 作分母
-    public static final int DATA_CONTROL_ROD = 8;
-    public static final int DATA_ACTIVE = 9;
-    public static final int DATA_POWER = 10;
+    public static final int DATA_STEAM = 5;
+    public static final int DATA_WATER = 6;
+    public static final int DATA_FLUID_CAPACITY = 7;
+    public static final int DATA_POWER = 8;
     /** 控制器初始化失败标志（1=失败，0=正常），用于客户端 GUI 禁用按钮 */
-    public static final int DATA_INIT_FAILED = 11;
-    /** 反应堆堆芯温度（摄氏度 ×10，int 传输减少精度损失） */
-    public static final int DATA_REACTOR_HEAT = 12;
-    public static final int DATA_POS_READY = 13;
-    /** 控制器已完成初始化标志（1=可操作，0=仍在排队初始化或不可用）。 */
-    public static final int DATA_CONTROLLER_READY = 14;
-    public static final int DATA_COUNT = 15;
-
-    private final PackedContainerData _data;
+    public static final int DATA_INIT_FAILED = 9;
+    /** 涡轮机转子转速（弧度/秒 ×10，int 传输） */
+    public static final int DATA_ROTOR_SPEED = 10;
+    public static final int DATA_POS_READY = 11;
+    /** 控制器已完成初始化标志（1=可显示真实状态，0=仍在排队初始化或不可用）。 */
+    public static final int DATA_CONTROLLER_READY = 12;
+    public static final int DATA_COUNT = 13;
 
     @Nullable
-    private final CompactReactorTileEntity _tile;
+    private final CompactTurbineTileEntity _tile;
 
     /** 客户端构造：数据从服务端同步，不持有 TileEntity。 */
-    public CompactReactorMenu(int containerId, Inventory playerInventory) {
+    public CompactTurbineMenu(int containerId, Inventory playerInventory) {
         this(containerId, playerInventory, null,
                 new PackedContainerData(new SimpleContainerData(DATA_COUNT * 2), DATA_COUNT, false));
     }
 
     /** 服务端构造：数据实时读取自控制器。 */
-    public CompactReactorMenu(int containerId, Inventory playerInventory, CompactReactorTileEntity tile) {
+    public CompactTurbineMenu(int containerId, Inventory playerInventory, CompactTurbineTileEntity tile) {
         this(containerId, playerInventory, tile,
-                new PackedContainerData(new ReactorData(tile), DATA_COUNT, true));
+                new PackedContainerData(new TurbineData(tile), DATA_COUNT, true));
     }
 
-    private CompactReactorMenu(int containerId, Inventory playerInventory,
-                               @Nullable CompactReactorTileEntity tile, PackedContainerData data) {
-        super(Content.COMPACT_REACTOR_MENU.get(), containerId);
+    private CompactTurbineMenu(int containerId, Inventory playerInventory,
+                               @Nullable CompactTurbineTileEntity tile, PackedContainerData data) {
+        super(Content.COMPACT_TURBINE_MENU.get(), containerId, data);
         this._tile = tile;
-        this._data = data;
+    }
 
-        this.addDataSlots(data);
+    @Override
+    public ItemStack quickMoveStack(Player player, int index) {
+        // 无机器槽位，禁止快捷移动
+        return ItemStack.EMPTY;
     }
 
     @Override
@@ -88,39 +85,23 @@ public class CompactReactorMenu extends AbstractContainerMenu {
         return player.distanceToSqr(x, y, z) < 64;
     }
 
-    @Override
-    public ItemStack quickMoveStack(Player player, int index) {
-        return ItemStack.EMPTY;
-    }
-
-    @Override
-    public void removed(Player player) {
-        super.removed(player);
-        // 无燃料槽，无需归还物品
-    }
-
     /** 读取同步数据槽。 */
     public int getData(int index) {
         return this._data.getValue(index);
     }
 
-    /** 服务端校验控制包是否仍绑定到玩家当前打开的这个机器。 */
-    public boolean isForTile(CompactReactorTileEntity tile) {
-        return this._tile == tile && !tile.isRemoved();
-    }
+    /** 服务端实时数据源：从涡轮机控制器读取当前状态。 */
+    private static class TurbineData implements ContainerData {
 
-    /** 服务端实时数据源：从反应堆控制器读取当前状态。 */
-    private static class ReactorData implements ContainerData {
+        private final CompactTurbineTileEntity _tile;
 
-        private final CompactReactorTileEntity _tile;
-
-        ReactorData(CompactReactorTileEntity tile) {
+        TurbineData(CompactTurbineTileEntity tile) {
             this._tile = tile;
         }
 
         @Override
         public int get(int index) {
-            // 方块坐标独立同步；控制器就绪使用单独标志，避免初始化期间显示伪零数据并启用按钮。
+            // 方块坐标独立同步；控制器就绪使用单独标志，避免初始化期间显示伪零数据。
             return switch (index) {
                 case DATA_POS_READY -> 1;
                 case DATA_POS_X -> this._tile.getBlockPos().getX();
@@ -136,13 +117,11 @@ public class CompactReactorMenu extends AbstractContainerMenu {
                     yield switch (index) {
                         case DATA_ENERGY -> (int) Math.min(controller.getEnergyStored(EnergySystem.ForgeEnergy).longValue(), Integer.MAX_VALUE);
                         case DATA_ENERGY_CAPACITY -> (int) Math.min(controller.getCapacity(EnergySystem.ForgeEnergy).longValue(), Integer.MAX_VALUE);
-                        case DATA_FUEL -> controller.getFuelAmount();
-                        case DATA_WASTE -> controller.getWasteAmount();
-                        case DATA_FUEL_CAPACITY -> controller.getFuelCapacity();
-                        case DATA_CONTROL_ROD -> this._tile.getControlRodInsertionRatio();
-                        case DATA_ACTIVE -> controller.isMachineActive() ? 1 : 0;
+                        case DATA_STEAM -> controller.getFluidContainer().getGasAmount();
+                        case DATA_WATER -> controller.getFluidContainer().getLiquidAmount();
+                        case DATA_FLUID_CAPACITY -> controller.getFluidContainer().getCapacity();
                         case DATA_POWER -> (int) Math.min(controller.getEnergyGeneratedLastTick(), (double) Integer.MAX_VALUE);
-                        case DATA_REACTOR_HEAT -> (int) (controller.getReactorTemperatureCelsius() * 10.0);
+                        case DATA_ROTOR_SPEED -> (int) (controller.getRotorAngularSpeed() * 10.0);
                         default -> 0;
                     };
                 }

@@ -130,7 +130,7 @@ public final class CompactReactorFluidHandler implements IFluidHandler {
         final FluidStack vapor = this._vapor.drain(resource, action);
         if (!vapor.isEmpty()) return vapor;
         final FluidStack waste = this.wasteFluid();
-        if (waste.isEmpty() || waste.getFluid() != resource.getFluid()) return FluidStack.EMPTY;
+        if (waste.isEmpty() || !FluidStack.isSameFluidSameComponents(waste, resource)) return FluidStack.EMPTY;
         return this.drainWaste(resource.getAmount(), action);
     }
 

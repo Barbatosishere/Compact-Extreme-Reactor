@@ -2,15 +2,19 @@ package com.compact.extremereactor.common.command;
 
 import com.compact.extremereactor.CompactExtremeReactor;
 import com.compact.extremereactor.common.capability.CompactEnergyStorage;
+import com.compact.extremereactor.common.capability.CompactEnergySink;
+import com.compact.extremereactor.common.capability.CompactFluidizerItemHandler;
 import com.compact.extremereactor.common.config.CompactConfig;
 import com.compact.extremereactor.common.multiblock.CompactFluidizerController;
 import com.compact.extremereactor.common.multiblock.CompactReactorController;
 import com.compact.extremereactor.common.multiblock.CompactTurbineController;
+import com.compact.extremereactor.common.multiblock.ICompactController;
 import com.compact.extremereactor.common.tile.AbstractCompactMachineTileEntity;
 import com.compact.extremereactor.common.tile.CompactFluidizerTileEntity;
 import com.compact.extremereactor.common.tile.CompactReactorTileEntity;
 import com.compact.extremereactor.common.tile.CompactTurbineTileEntity;
 import com.mojang.brigadier.CommandDispatcher;
+import it.zerono.mods.extremereactors.config.Config;
 import it.zerono.mods.extremereactors.api.coolant.FluidMappingsRegistry;
 import it.zerono.mods.extremereactors.api.coolant.TransitionsRegistry;
 import it.zerono.mods.extremereactors.api.reactor.Reactant;
@@ -20,6 +24,7 @@ import it.zerono.mods.extremereactors.gamecontent.multiblock.reactor.MultiblockR
 import it.zerono.mods.zerocore.lib.data.WideAmount;
 import it.zerono.mods.zerocore.lib.data.stack.OperationMode;
 import it.zerono.mods.zerocore.lib.energy.EnergySystem;
+import it.zerono.mods.zerocore.lib.energy.WideEnergyBuffer;
 import it.zerono.mods.zerocore.lib.data.nbt.ISyncableEntity;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
@@ -29,6 +34,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.Tag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.Level;
@@ -60,6 +66,19 @@ public final class DevCommands {
     /** 注册命令（由主类在 !production 时挂到 NeoForge.EVENT_BUS）。 */
     public static void onRegisterCommands(RegisterCommandsEvent event) {
         final CommandDispatcher<CommandSourceStack> dispatcher = event.getDispatcher();
+        dispatcher.register(Commands.literal("cerdev")
+                .requires(source -> source.hasPermission(2))
+                .then(Commands.literal("chunkstate")
+                        .then(Commands.argument("pos", BlockPosArgument.blockPos())
+                                .executes(ctx -> {
+                                    final BlockPos pos = BlockPosArgument.getBlockPos(ctx, "pos");
+                                    final ServerLevel level = ctx.getSource().getLevel();
+                                    final boolean loaded = level.getChunkSource().getChunkNow(
+                                            pos.getX() >> 4, pos.getZ() >> 4) != null;
+                                    feedback(ctx.getSource(), "chunkLoaded=%s blockTicking=%s".formatted(
+                                            loaded, loaded && level.shouldTickBlocksAt(pos)));
+                                    return 1;
+                                }))));
         dispatcher.register(Commands.literal("cerdev")
                 .requires(source -> source.hasPermission(2))
                 .then(Commands.literal("fill")
@@ -347,6 +366,12 @@ public final class DevCommands {
 
         boolean passed = true;
         feedback(source, "=== selftest @%s ===".formatted(pos.toShortString()));
+        passed &= selfTestMenuData(source, tile);
+        passed &= selfTestFluidRouting(source, tile);
+        passed &= selfTestFractionalEnergy(source);
+        if (tile instanceof CompactReactorTileEntity || tile instanceof CompactTurbineTileEntity) {
+            passed &= selfTestGeneratorCapacity(source, level, pos, tile instanceof CompactTurbineTileEntity);
+        }
 
         if (tile instanceof CompactReactorTileEntity reactor) {
             final int before = reactor.getControlRodInsertionRatio();
@@ -358,6 +383,20 @@ public final class DevCommands {
             feedback(source, "controlRodRelative=%s (before=%d changed=%d restored=%d)"
                     .formatted(rodPassed ? "PASS" : "FAIL", before, changed, restored));
             passed &= rodPassed;
+
+            final var itemHandler = reactor.getItemHandler(null);
+            final boolean invalidItemSlots = itemHandler != null
+                    && itemHandler.getSlots() == 2
+                    && itemHandler.getSlotLimit(-1) == 0
+                    && itemHandler.getSlotLimit(2) == 0
+                    && itemHandler.getStackInSlot(-1).isEmpty()
+                    && itemHandler.getStackInSlot(2).isEmpty()
+                    && itemHandler.extractItem(-1, 1, false).isEmpty()
+                    && itemHandler.extractItem(2, 1, false).isEmpty()
+                    && !itemHandler.isItemValid(-1, net.minecraft.world.item.ItemStack.EMPTY)
+                    && !itemHandler.isItemValid(2, net.minecraft.world.item.ItemStack.EMPTY);
+            feedback(source, "reactorInvalidItemSlots=%s".formatted(invalidItemSlots ? "PASS" : "FAIL"));
+            passed &= invalidItemSlots;
         }
 
         final CompactEnergyStorage oldEnergy = new CompactEnergyStorage(controller);
@@ -370,6 +409,22 @@ public final class DevCommands {
         feedback(source, "releasedEnergyReference=%s (before=%d)"
                 .formatted(released ? "PASS" : "FAIL", liveEnergy));
         passed &= released;
+
+        final CompactFluidizerTileEntity pendingFluidizer = new CompactFluidizerTileEntity(
+                pos, com.compact.extremereactor.common.Content.COMPACT_FLUIDIZER.get().defaultBlockState());
+        final CompactFluidizerItemHandler pendingItems = new CompactFluidizerItemHandler(pendingFluidizer);
+        final boolean pendingSlots = pendingItems.getSlots() == 2
+                && pendingItems.getStackInSlot(0).isEmpty()
+                && pendingItems.extractItem(0, 1, false).isEmpty()
+                && !pendingFluidizer.isControllerReady();
+        pendingItems.release();
+        final boolean itemLifecycle = pendingSlots && pendingItems.getSlots() == 0;
+        feedback(source, "fluidizerPendingItemSlots=%s".formatted(itemLifecycle ? "PASS" : "FAIL"));
+        passed &= itemLifecycle;
+
+        if (tile instanceof CompactFluidizerTileEntity) {
+            passed &= selfTestFluidizerEnergy(source, level, pos);
+        }
 
         if (tile instanceof CompactTurbineTileEntity) {
             final CompactTurbineController restoredController = new CompactTurbineController(
@@ -390,10 +445,713 @@ public final class DevCommands {
                     .formatted(turbinePassed ? "PASS" : "FAIL",
                             restoredController.canInsert(), restoredController.isInductorEngaged()));
             passed &= turbinePassed;
+            passed &= selfTestTurbineCondensation(source, restoredController);
         }
 
         feedback(source, "=== selftest %s ===".formatted(passed ? "PASS" : "FAIL"));
         return passed ? 1 : 0;
+    }
+
+    private static boolean selfTestFractionalEnergy(CommandSourceStack source) {
+        final WideEnergyBuffer buffer = new WideEnergyBuffer(EnergySystem.ForgeEnergy,
+                WideAmount.from(10000), WideAmount.from(10000), WideAmount.from(10000));
+        final CompactEnergyStorage output = new CompactEnergyStorage(buffer);
+        final CompactEnergySink input = new CompactEnergySink(buffer);
+        boolean passed = true;
+        buffer.setEnergyStored(WideAmount.from(123.5d), EnergySystem.ForgeEnergy);
+        final boolean extract = output.extractEnergy(1000, true) == 123
+                && buffer.getEnergyStored(EnergySystem.ForgeEnergy).doubleValue() == 123.5d
+                && output.extractEnergy(1000, false) == 123
+                && output.extractEnergy(1000, false) == 0
+                && buffer.getEnergyStored(EnergySystem.ForgeEnergy).doubleValue() == 0.5d;
+        passed &= extract;
+        feedback(source, "fractionalEnergyExtraction=%s".formatted(extract ? "PASS" : "FAIL"));
+
+        buffer.setEnergyStored(WideAmount.from(9000.5d), EnergySystem.ForgeEnergy);
+        final boolean insert = input.receiveEnergy(1000, true) == 999
+                && buffer.getEnergyStored(EnergySystem.ForgeEnergy).doubleValue() == 9000.5d
+                && input.receiveEnergy(1000, false) == 999
+                && input.receiveEnergy(1000, false) == 0
+                && buffer.getEnergyStored(EnergySystem.ForgeEnergy).doubleValue() == 9999.5d;
+        passed &= insert;
+        feedback(source, "fractionalEnergyInsertion=%s".formatted(insert ? "PASS" : "FAIL"));
+
+        buffer.setEnergyStored(WideAmount.from(5000), EnergySystem.ForgeEnergy);
+        buffer.setMaxTransfer(WideAmount.from(1.5d));
+        final boolean transferLimit = output.extractEnergy(1000, false) == 1
+                && buffer.getEnergyStored(EnergySystem.ForgeEnergy).longValue() == 4999
+                && input.receiveEnergy(1000, false) == 1
+                && buffer.getEnergyStored(EnergySystem.ForgeEnergy).longValue() == 5000;
+        passed &= transferLimit;
+        feedback(source, "fractionalEnergyTransferLimit=%s".formatted(transferLimit ? "PASS" : "FAIL"));
+        buffer.setMaxTransfer(WideAmount.from(0.5d));
+        final boolean subunitLimit = output.extractEnergy(1000, false) == 0
+                && input.receiveEnergy(1000, false) == 0
+                && buffer.getEnergyStored(EnergySystem.ForgeEnergy).longValue() == 5000;
+        passed &= subunitLimit;
+        feedback(source, "subunitEnergyTransferLimit=%s".formatted(subunitLimit ? "PASS" : "FAIL"));
+        output.release();
+        input.release();
+        return passed;
+    }
+
+    private static ICompactController testGenerator(Level level, BlockPos pos, int size, boolean turbine) {
+        final ICompactController controller = turbine
+                ? new CompactTurbineController(level, pos, 1, size, size, size)
+                : new CompactReactorController(level, pos, 16, 4, 4, size, size, size);
+        controller.simulateAssembly();
+        return controller;
+    }
+
+    private static boolean selfTestGeneratorCapacity(CommandSourceStack source, Level level, BlockPos pos, boolean turbine) {
+        final ICompactController original = testGenerator(level, pos, 3, turbine);
+        final ICompactController expanded = testGenerator(level, pos, 9, turbine);
+        final ICompactController reduced = testGenerator(level, pos, 3, turbine);
+        final String kind = turbine ? "turbine" : "reactor";
+        boolean passed = true;
+        try {
+            final long smallCapacity = original.getCapacity(EnergySystem.ForgeEnergy).longValue();
+            final long largeCapacity = expanded.getCapacity(EnergySystem.ForgeEnergy).longValue();
+            original.insertEnergy(EnergySystem.ForgeEnergy, WideAmount.from(smallCapacity - 1), OperationMode.Execute);
+            final CompoundTag originalTag = original.syncDataTo(new CompoundTag(), level.registryAccess(),
+                    ISyncableEntity.SyncReason.FullSync);
+            final CompoundTag originalSnapshot = originalTag.copy();
+            expanded.syncDataFrom(originalTag, level.registryAccess(), ISyncableEntity.SyncReason.FullSync);
+            final boolean expansion = largeCapacity > smallCapacity
+                    && expanded.getCapacity(EnergySystem.ForgeEnergy).longValue() == largeCapacity
+                    && expanded.getEnergyStored(EnergySystem.ForgeEnergy).longValue() == smallCapacity - 1
+                    && originalTag.equals(originalSnapshot);
+            passed &= expansion;
+            feedback(source, "%sCapacityExpansion=%s".formatted(kind, expansion ? "PASS" : "FAIL"));
+
+            final long savedEnergy = largeCapacity - 1;
+            expanded.insertEnergy(EnergySystem.ForgeEnergy,
+                    WideAmount.from(savedEnergy - smallCapacity + 1), OperationMode.Execute);
+            final CompoundTag expandedTag = expanded.syncDataTo(new CompoundTag(), level.registryAccess(),
+                    ISyncableEntity.SyncReason.FullSync);
+            final CompoundTag expandedSnapshot = expandedTag.copy();
+            reduced.syncDataFrom(expandedTag, level.registryAccess(), ISyncableEntity.SyncReason.FullSync);
+            final boolean shrink = reduced.getCapacity(EnergySystem.ForgeEnergy).longValue() == smallCapacity
+                    && reduced.getEnergyStored(EnergySystem.ForgeEnergy).longValue() == savedEnergy
+                    && reduced.isEnergyBufferFull() && expandedTag.equals(expandedSnapshot);
+            passed &= shrink;
+            feedback(source, "%sCapacityShrink=%s".formatted(kind, shrink ? "PASS" : "FAIL"));
+
+            reduced.setMachineActive(true);
+            reduced.tick();
+            final CompactEnergyStorage output = new CompactEnergyStorage(reduced);
+            final boolean simulated = output.extractEnergy(1000, true) == 1000
+                    && reduced.getEnergyStored(EnergySystem.ForgeEnergy).longValue() == savedEnergy;
+            final boolean executed = output.extractEnergy(1000, false) == 1000
+                    && reduced.getEnergyStored(EnergySystem.ForgeEnergy).longValue() == savedEnergy - 1000;
+            passed &= simulated && executed;
+            feedback(source, "%sOverfullEnergyExtraction=%s".formatted(kind, simulated && executed ? "PASS" : "FAIL"));
+
+            final CompoundTag persisted = reduced.syncDataTo(new CompoundTag(), level.registryAccess(),
+                    ISyncableEntity.SyncReason.FullSync);
+            original.syncDataFrom(persisted, level.registryAccess(), ISyncableEntity.SyncReason.FullSync);
+            final boolean roundTrip = original.getCapacity(EnergySystem.ForgeEnergy).longValue() == smallCapacity
+                    && original.getEnergyStored(EnergySystem.ForgeEnergy).longValue() == savedEnergy - 1000;
+            passed &= roundTrip;
+            feedback(source, "%sOverfullEnergyRoundTrip=%s".formatted(kind, roundTrip ? "PASS" : "FAIL"));
+
+            final CompoundTag legacy = expandedTag.copy();
+            final CompoundTag legacyBuffer = new CompoundTag();
+            legacyBuffer.putDouble("capacity", largeCapacity);
+            legacyBuffer.putDouble("energy", savedEnergy + 0.5d);
+            legacyBuffer.putDouble("maxInsert", 0.0d);
+            legacyBuffer.putDouble("maxExtract", 2000.0d);
+            legacy.put("buffer", legacyBuffer);
+            final CompoundTag legacySnapshot = legacy.copy();
+            reduced.syncDataFrom(legacy, level.registryAccess(), ISyncableEntity.SyncReason.FullSync);
+            final boolean legacyRestore = reduced.getCapacity(EnergySystem.ForgeEnergy).longValue() == smallCapacity
+                    && reduced.getEnergyStored(EnergySystem.ForgeEnergy).doubleValue() == savedEnergy + 0.5d
+                    && reduced.canInsert() && legacy.equals(legacySnapshot);
+            passed &= legacyRestore;
+            feedback(source, "%sLegacyEnergyCapacity=%s".formatted(kind, legacyRestore ? "PASS" : "FAIL"));
+        } finally {
+            original.releaseFluidHandlers();
+            expanded.releaseFluidHandlers();
+            reduced.releaseFluidHandlers();
+        }
+        return passed;
+    }
+
+    private static boolean selfTestTurbineCondensation(CommandSourceStack source, CompactTurbineController turbine) {
+        try {
+            final FluidContainer container = (FluidContainer) turbine.getFluidContainer();
+            final Fluid steam = BuiltInRegistries.FLUID.get(
+                    ResourceLocation.fromNamespaceAndPath("bigreactors", "steam"));
+            final IFluidHandler input = turbine.getFluidHandler(it.zerono.mods.zerocore.lib.data.IoDirection.Input).orElseThrow();
+            turbine.setMaxIntakeRate(100);
+            turbine.setMachineActive(true);
+            turbine.setVentSetting(it.zerono.mods.extremereactors.gamecontent.multiblock.turbine.VentSetting.VentOverflow);
+            boolean passed = true;
+            for (int amount : new int[]{1, 37, 100, 101, 1000}) {
+                container.voidGas();
+                container.voidLiquid();
+                final int accepted = input.fill(new FluidStack(steam, amount), IFluidHandler.FluidAction.EXECUTE);
+                final var optionalMapping = container.getVapor().flatMap(TransitionsRegistry::get).orElse(null);
+                final var directMapping = container.mapVapor(vapor -> TransitionsRegistry.get(vapor).orElse(null), null);
+                for (int processedTick = 0; processedTick < 20 && container.getGasAmount() > 0; processedTick++) {
+                    turbine.tick();
+                }
+                final boolean conserved = accepted == amount && optionalMapping == directMapping
+                        && container.getGasAmount() == 0 && container.getLiquidAmount() == amount;
+                passed &= conserved;
+                feedback(source, "turbineCondensation=%s (steam=%d water=%d)"
+                        .formatted(conserved ? "PASS" : "FAIL", amount, container.getLiquidAmount()));
+            }
+            container.voidLiquid();
+            final double speedBefore = turbine.getRotorAngularSpeed();
+            turbine.tick();
+            final boolean coasting = speedBefore > 0.0d && turbine.getRotorAngularSpeed() < speedBefore
+                    && turbine.getEnergyGeneratedLastTick() > 0.0d;
+            passed &= coasting;
+            feedback(source, "turbineEmptyTankCoasting=%s".formatted(coasting ? "PASS" : "FAIL"));
+
+            turbine.setVentSetting(it.zerono.mods.extremereactors.gamecontent.multiblock.turbine.VentSetting.VentAll);
+            input.fill(new FluidStack(steam, 37), IFluidHandler.FluidAction.EXECUTE);
+            turbine.tick();
+            final boolean ventAll = container.getGasAmount() == 0 && container.getLiquidAmount() == 0;
+            passed &= ventAll;
+            feedback(source, "turbineVentAll=%s".formatted(ventAll ? "PASS" : "FAIL"));
+
+            turbine.setVentSetting(it.zerono.mods.extremereactors.gamecontent.multiblock.turbine.VentSetting.DoNotVent);
+            final int capacity = container.getCapacity();
+            container.insertLiquid(net.minecraft.world.level.material.Fluids.WATER, capacity, OperationMode.Execute);
+            input.fill(new FluidStack(steam, 37), IFluidHandler.FluidAction.EXECUTE);
+            turbine.tick();
+            final boolean fullOutput = container.getGasAmount() == 37 && container.getLiquidAmount() == capacity;
+            passed &= fullOutput;
+            feedback(source, "turbineFullOutputNoVent=%s".formatted(fullOutput ? "PASS" : "FAIL"));
+            container.voidLiquid();
+            turbine.tick();
+            final boolean resumed = container.getGasAmount() == 0 && container.getLiquidAmount() == 37;
+            passed &= resumed;
+            feedback(source, "turbineOutputSpaceResume=%s".formatted(resumed ? "PASS" : "FAIL"));
+            return passed;
+        } finally {
+            turbine.releaseFluidHandlers();
+        }
+    }
+
+    private static boolean selfTestFluidRouting(CommandSourceStack source, AbstractCompactMachineTileEntity tile) {
+        final var controller = tile.getController();
+        final IFluidHandler combined = tile.getFluidHandler(null);
+        if (controller == null || combined == null) {
+            feedback(source, "fluidTankRouting=FAIL (capability unavailable)");
+            return false;
+        }
+        final IFluidHandler[] handlers = {
+                controller.getFluidHandler(it.zerono.mods.zerocore.lib.data.IoDirection.Input).orElseThrow(),
+                controller.getFluidHandler(it.zerono.mods.zerocore.lib.data.IoDirection.Output).orElseThrow()};
+        final FluidStack[] candidates = {
+                new FluidStack(net.minecraft.world.level.material.Fluids.WATER, 1),
+                new FluidStack(BuiltInRegistries.FLUID.get(
+                        ResourceLocation.fromNamespaceAndPath("bigreactors", "steam")), 1)};
+        boolean passed = true;
+        int tank = 0;
+        for (IFluidHandler handler : handlers) {
+            final int count = handler.getTanks();
+            for (int localTank = 0; localTank < count; localTank++, tank++) {
+                final FluidStack expected = handler.getFluidInTank(localTank);
+                final FluidStack actual = combined.getFluidInTank(tank);
+                passed &= expected.isEmpty() ? actual.isEmpty()
+                        : expected.getAmount() == actual.getAmount()
+                                && FluidStack.isSameFluidSameComponents(expected, actual);
+                passed &= combined.getTankCapacity(tank) == handler.getTankCapacity(localTank);
+                for (FluidStack candidate : candidates) {
+                    passed &= combined.isFluidValid(tank, candidate) == handler.isFluidValid(localTank, candidate);
+                }
+            }
+        }
+        final int totalTanks = combined.getTanks();
+        passed &= totalTanks == tank + (tile instanceof CompactReactorTileEntity ? 2 : 0);
+        for (int invalidTank : new int[]{-1, totalTanks, Integer.MAX_VALUE}) {
+            passed &= combined.getFluidInTank(invalidTank).isEmpty()
+                    && combined.getTankCapacity(invalidTank) == 0
+                    && !combined.isFluidValid(invalidTank, candidates[0]);
+        }
+        feedback(source, "fluidTankRouting=%s (logicalTanks=%d)".formatted(passed ? "PASS" : "FAIL", totalTanks));
+        if (tile instanceof CompactReactorTileEntity) {
+            final var pendingReactor = new CompactReactorTileEntity(tile.getBlockPos(), tile.getBlockState()) {
+                public int pendingTankCount() {
+                    return this.getPendingFluidTankCount();
+                }
+
+                public boolean pendingFluidValid(int tankIndex, FluidStack stack) {
+                    return this.isPendingFluidValid(tankIndex, stack);
+                }
+            };
+            final var delegate = new java.util.concurrent.atomic.AtomicReference<IFluidHandler>();
+            final var pending = new com.compact.extremereactor.common.capability.DeferredFluidHandler(
+                    delegate::get, pendingReactor.pendingTankCount(), pendingReactor::pendingFluidValid);
+            final int before = pending.getTanks();
+            boolean pendingPassed = before == totalTanks && pending.getFluidInTank(3).isEmpty()
+                    && pending.getTankCapacity(3) == 0 && !pending.isFluidValid(3, candidates[0])
+                    && !pendingReactor.isControllerReady();
+            delegate.set(combined);
+            pendingPassed &= pending.getTanks() == before
+                    && pending.getTankCapacity(3) == combined.getTankCapacity(3);
+            pending.release();
+            pendingPassed &= pending.getTanks() == 0 && pending.getTankCapacity(3) == 0
+                    && pending.getFluidInTank(3).isEmpty() && !pending.isFluidValid(3, candidates[0]);
+            feedback(source, "reactorPendingFluidTanks=%s (before=%d ready=%d)"
+                    .formatted(pendingPassed ? "PASS" : "FAIL", before, totalTanks));
+            passed &= pendingPassed;
+        }
+        return passed;
+    }
+
+    private static boolean selfTestMenuData(CommandSourceStack source, AbstractCompactMachineTileEntity tile) {
+        final net.minecraft.world.inventory.AbstractContainerMenu serverMenu;
+        final net.minecraft.world.inventory.AbstractContainerMenu clientMenu;
+        final java.util.function.IntUnaryOperator serverValue;
+        final java.util.function.IntUnaryOperator clientValue;
+        final int count;
+        if (tile instanceof CompactReactorTileEntity reactor) {
+            final var server = new com.compact.extremereactor.common.menu.CompactReactorMenu(1, null, reactor);
+            final var client = new com.compact.extremereactor.common.menu.CompactReactorMenu(1, null);
+            serverMenu = server;
+            clientMenu = client;
+            serverValue = server::getData;
+            clientValue = client::getData;
+            count = com.compact.extremereactor.common.menu.CompactReactorMenu.DATA_COUNT;
+        } else if (tile instanceof CompactTurbineTileEntity turbine) {
+            final var server = new com.compact.extremereactor.common.menu.CompactTurbineMenu(1, null, turbine);
+            final var client = new com.compact.extremereactor.common.menu.CompactTurbineMenu(1, null);
+            serverMenu = server;
+            clientMenu = client;
+            serverValue = server::getData;
+            clientValue = client::getData;
+            count = com.compact.extremereactor.common.menu.CompactTurbineMenu.DATA_COUNT;
+        } else if (tile instanceof CompactFluidizerTileEntity fluidizer) {
+            final var server = new com.compact.extremereactor.common.menu.CompactFluidizerMenu(1, null, fluidizer);
+            final var client = new com.compact.extremereactor.common.menu.CompactFluidizerMenu(1, null);
+            serverMenu = server;
+            clientMenu = client;
+            serverValue = server::getData;
+            clientValue = client::getData;
+            count = com.compact.extremereactor.common.menu.CompactFluidizerMenu.DATA_COUNT;
+        } else {
+            return false;
+        }
+        serverMenu.setSynchronizer(new net.minecraft.world.inventory.ContainerSynchronizer() {
+            @Override
+            public void sendInitialData(net.minecraft.world.inventory.AbstractContainerMenu menu,
+                                        net.minecraft.core.NonNullList<net.minecraft.world.item.ItemStack> stacks,
+                                        net.minecraft.world.item.ItemStack carried, int[] values) {
+                for (int index = 0; index < values.length; index++) {
+                    clientMenu.setData(index, (short) values[index]);
+                }
+            }
+
+            @Override
+            public void sendSlotChange(net.minecraft.world.inventory.AbstractContainerMenu menu, int index,
+                                       net.minecraft.world.item.ItemStack stack) {
+            }
+
+            @Override
+            public void sendCarriedChange(net.minecraft.world.inventory.AbstractContainerMenu menu,
+                                          net.minecraft.world.item.ItemStack stack) {
+            }
+
+            @Override
+            public void sendDataChange(net.minecraft.world.inventory.AbstractContainerMenu menu, int index, int value) {
+                clientMenu.setData(index, (short) value);
+            }
+        });
+        boolean passed = true;
+        for (Runnable broadcast : new Runnable[]{serverMenu::broadcastChanges, serverMenu::broadcastFullState,
+                serverMenu::sendAllDataToRemote}) {
+            broadcast.run();
+            for (int index = 0; index < count; index++) {
+                passed &= serverValue.applyAsInt(index) == clientValue.applyAsInt(index);
+            }
+        }
+        feedback(source, "menuDataSync=%s (logicalSlots=%d packedSlots=%d)"
+                .formatted(passed ? "PASS" : "FAIL", count, count * 2));
+        return passed;
+    }
+
+    private static boolean selfTestFluidizerEnergy(CommandSourceStack source, Level level, BlockPos pos) {
+        final CompactFluidizerController fluidizer = new CompactFluidizerController(level, pos, 3, 3, 3);
+        final int originalCost = Config.COMMON.fluidizer.energyPerRecipeTick.get();
+        boolean passed = true;
+        try {
+            fluidizer.simulateAssembly();
+            fluidizer.getItemInputs().setStackInSlot(0, new net.minecraft.world.item.ItemStack(
+                    BuiltInRegistries.ITEM.get(ResourceLocation.fromNamespaceAndPath("bigreactors", "yellorium_ingot")), 64));
+            fluidizer.insertEnergy(EnergySystem.ForgeEnergy, WideAmount.asImmutable(1000), OperationMode.Execute);
+            fluidizer.setMachineActive(true);
+            for (int cost : new int[]{25, 50, 25}) {
+                Config.COMMON.fluidizer.energyPerRecipeTick.set(cost);
+                Config.COMMON.fluidizer.energyPerRecipeTick.clearCache();
+                final long before = fluidizer.getEnergyStored(EnergySystem.ForgeEnergy).longValue();
+                fluidizer.tick();
+                final long spent = before - fluidizer.getEnergyStored(EnergySystem.ForgeEnergy).longValue();
+                passed &= spent == cost;
+                feedback(source, "fluidizerEnergyCost=%s (cost=%d spent=%d)"
+                        .formatted(spent == cost ? "PASS" : "FAIL", cost, spent));
+            }
+            final long blockedEnergy = fluidizer.getEnergyStored(EnergySystem.ForgeEnergy).longValue();
+            Config.COMMON.fluidizer.energyPerRecipeTick.set(2000);
+            Config.COMMON.fluidizer.energyPerRecipeTick.clearCache();
+            fluidizer.tick();
+            final boolean insufficientEnergy = fluidizer.getEnergyStored(EnergySystem.ForgeEnergy).longValue() == blockedEnergy
+                    && fluidizer.getCurrentTick() == 0
+                    && fluidizer.getInputItemAt(0).getCount() == 64
+                    && fluidizer.getOutputTank().getFluidInTank(0).isEmpty();
+            passed &= insufficientEnergy;
+            feedback(source, "fluidizerInsufficientEnergy=%s".formatted(insufficientEnergy ? "PASS" : "FAIL"));
+
+            Config.COMMON.fluidizer.energyPerRecipeTick.set(25);
+            Config.COMMON.fluidizer.energyPerRecipeTick.clearCache();
+            final Fluid yellorium = BuiltInRegistries.FLUID.get(
+                    ResourceLocation.fromNamespaceAndPath("bigreactors", "yellorium"));
+            final Fluid blutonium = BuiltInRegistries.FLUID.get(
+                    ResourceLocation.fromNamespaceAndPath("bigreactors", "blutonium"));
+            fluidizer.getOutputTank().setContent(new FluidStack(yellorium, fluidizer.getOutputTank().getTankCapacity(0)));
+            fluidizer.tick();
+            final boolean fullOutput = fluidizer.getEnergyStored(EnergySystem.ForgeEnergy).longValue() == blockedEnergy
+                    && fluidizer.getCurrentTick() == 0
+                    && fluidizer.getInputItemAt(0).getCount() == 64;
+            passed &= fullOutput;
+            feedback(source, "fluidizerFullOutput=%s".formatted(fullOutput ? "PASS" : "FAIL"));
+
+            fluidizer.getOutputTank().setContent(FluidStack.EMPTY);
+            fluidizer.insertEnergy(EnergySystem.ForgeEnergy, WideAmount.asImmutable(1000), OperationMode.Execute);
+            final long solidEnergy = fluidizer.getEnergyStored(EnergySystem.ForgeEnergy).longValue();
+            for (int processedTick = 0; processedTick < 40; processedTick++) {
+                fluidizer.tick();
+            }
+            final boolean solidComplete = solidEnergy - fluidizer.getEnergyStored(EnergySystem.ForgeEnergy).longValue() == 1000
+                    && fluidizer.getOutputTank().getFluidInTank(0).getAmount() == 1000
+                    && fluidizer.getInputItemAt(0).getCount() == 63;
+            passed &= solidComplete;
+            feedback(source, "fluidizerSolidCompletion=%s".formatted(solidComplete ? "PASS" : "FAIL"));
+
+            fluidizer.clearInputs();
+            fluidizer.getOutputTank().setContent(FluidStack.EMPTY);
+            for (int refill = 0; refill < 4; refill++) {
+                fluidizer.insertEnergy(EnergySystem.ForgeEnergy, WideAmount.asImmutable(1000), OperationMode.Execute);
+            }
+            final IFluidHandler input = fluidizer.getFluidHandler(it.zerono.mods.zerocore.lib.data.IoDirection.Input).orElseThrow();
+            final boolean invalidFluidBoundaries = input.getTanks() == 2
+                    && input.getFluidInTank(-1).isEmpty()
+                    && input.getTankCapacity(-1) == 0
+                    && !input.isFluidValid(-1, new FluidStack(yellorium, 1))
+                    && input.fill(FluidStack.EMPTY, IFluidHandler.FluidAction.SIMULATE) == 0
+                    && input.drain(-1, IFluidHandler.FluidAction.SIMULATE).isEmpty()
+                    && input.drain(FluidStack.EMPTY, IFluidHandler.FluidAction.SIMULATE).isEmpty()
+                    && input.drain(new FluidStack(yellorium, 1), IFluidHandler.FluidAction.SIMULATE).isEmpty();
+            passed &= invalidFluidBoundaries;
+            feedback(source, "fluidizerInvalidFluidBoundaries=%s"
+                    .formatted(invalidFluidBoundaries ? "PASS" : "FAIL"));
+            final int simulatedYellorium = input.fill(
+                    new FluidStack(yellorium, 2000), IFluidHandler.FluidAction.SIMULATE);
+            final boolean fluidSimulationStable = simulatedYellorium == 2000
+                    && fluidizer.getInputFluidAt(0).isEmpty()
+                    && fluidizer.getInputFluidAt(1).isEmpty();
+            passed &= fluidSimulationStable;
+            feedback(source, "fluidizerFluidSimulation=%s"
+                    .formatted(fluidSimulationStable ? "PASS" : "FAIL"));
+            final int acceptedYellorium = input.fill(new FluidStack(yellorium, 2000), IFluidHandler.FluidAction.EXECUTE);
+            final int acceptedBlutonium = input.fill(new FluidStack(blutonium, 1000), IFluidHandler.FluidAction.EXECUTE);
+            final long mixingEnergy = fluidizer.getEnergyStored(EnergySystem.ForgeEnergy).longValue();
+            for (int processedTick = 0; processedTick < 80; processedTick++) {
+                fluidizer.tick();
+            }
+            final boolean mixingComplete = acceptedYellorium == 2000 && acceptedBlutonium == 1000
+                    && mixingEnergy - fluidizer.getEnergyStored(EnergySystem.ForgeEnergy).longValue() == 4000
+                    && fluidizer.getOutputTank().getFluidInTank(0).getAmount() == 2000
+                    && fluidizer.getInputFluidAt(0).isEmpty() && fluidizer.getInputFluidAt(1).isEmpty();
+            passed &= mixingComplete;
+            feedback(source, "fluidizerMixingCompletion=%s".formatted(mixingComplete ? "PASS" : "FAIL"));
+
+            fluidizer.clearInputs();
+            fluidizer.getOutputTank().setContent(FluidStack.EMPTY);
+            fluidizer.getItemInputs().setStackInSlot(1, new net.minecraft.world.item.ItemStack(
+                    BuiltInRegistries.ITEM.get(ResourceLocation.fromNamespaceAndPath("bigreactors", "yellorium_ingot")), 1));
+            fluidizer.insertEnergy(EnergySystem.ForgeEnergy, WideAmount.asImmutable(1000), OperationMode.Execute);
+            final long resumedSolidEnergy = fluidizer.getEnergyStored(EnergySystem.ForgeEnergy).longValue();
+            for (int processedTick = 0; processedTick < 40; processedTick++) {
+                fluidizer.tick();
+            }
+            final boolean resumedSolid = resumedSolidEnergy - fluidizer.getEnergyStored(EnergySystem.ForgeEnergy).longValue() == 1000
+                    && fluidizer.getOutputTank().getFluidInTank(0).getAmount() == 1000
+                    && fluidizer.getInputItemAt(1).isEmpty();
+            passed &= resumedSolid;
+            feedback(source, "fluidizerMixingToSolid=%s".formatted(resumedSolid ? "PASS" : "FAIL"));
+
+            fluidizer.clearInputs();
+            fluidizer.getOutputTank().setContent(FluidStack.EMPTY);
+            final var duplicateIngredient = BuiltInRegistries.ITEM.get(
+                    ResourceLocation.fromNamespaceAndPath("bigreactors", "yellorium_ingot"));
+            fluidizer.getItemInputs().setStackInSlot(0, new net.minecraft.world.item.ItemStack(duplicateIngredient, 1));
+            fluidizer.getItemInputs().setStackInSlot(1, new net.minecraft.world.item.ItemStack(duplicateIngredient, 1));
+            for (int refill = 0; refill < 2; refill++) {
+                fluidizer.insertEnergy(EnergySystem.ForgeEnergy, WideAmount.asImmutable(1000), OperationMode.Execute);
+            }
+            final long duplicateEnergy = fluidizer.getEnergyStored(EnergySystem.ForgeEnergy).longValue();
+            for (int processedTick = 0; processedTick < 80; processedTick++) {
+                fluidizer.tick();
+            }
+            final boolean duplicateInputs = duplicateEnergy - fluidizer.getEnergyStored(EnergySystem.ForgeEnergy).longValue() == 2000
+                    && fluidizer.getOutputTank().getFluidInTank(0).getAmount() == 2000
+                    && fluidizer.getOutputTank().getFluidInTank(0).getFluid() == yellorium
+                    && fluidizer.getInputItemAt(0).isEmpty() && fluidizer.getInputItemAt(1).isEmpty();
+            passed &= duplicateInputs;
+            feedback(source, "fluidizerDuplicateSolidInputs=%s".formatted(duplicateInputs ? "PASS" : "FAIL"));
+            passed &= selfTestFluidizerCapacity(source, level, pos, yellorium);
+            passed &= selfTestFluidizerEnergyPersistence(source, level, pos);
+            passed &= selfTestFluidizerInventoryPersistence(source, level, pos, yellorium, blutonium);
+        } finally {
+            Config.COMMON.fluidizer.energyPerRecipeTick.set(originalCost);
+            Config.COMMON.fluidizer.energyPerRecipeTick.clearCache();
+            fluidizer.releaseFluidHandlers();
+        }
+        return passed;
+    }
+
+    private static boolean selfTestFluidizerInventoryPersistence(CommandSourceStack source, Level level, BlockPos pos,
+                                                               Fluid firstFluid, Fluid secondFluid) {
+        final CompactFluidizerController fluidizer = new CompactFluidizerController(level, pos, 3, 3, 3);
+        boolean passed = true;
+        try {
+            fluidizer.simulateAssembly();
+            final var ingredient = BuiltInRegistries.ITEM.get(
+                    ResourceLocation.fromNamespaceAndPath("bigreactors", "yellorium_ingot"));
+            fluidizer.getItemInputs().setStackInSlot(0, new net.minecraft.world.item.ItemStack(ingredient, 3));
+            fluidizer.getItemInputs().setStackInSlot(1, new net.minecraft.world.item.ItemStack(ingredient, 5));
+            final IFluidHandler input = fluidizer.getFluidHandler(
+                    it.zerono.mods.zerocore.lib.data.IoDirection.Input).orElseThrow();
+            if (input.fill(new FluidStack(firstFluid, 250), IFluidHandler.FluidAction.EXECUTE) != 250
+                    || input.fill(new FluidStack(secondFluid, 125), IFluidHandler.FluidAction.EXECUTE) != 125) {
+                feedback(source, "fluidizerInventoryFixture=FAIL");
+                return false;
+            }
+            final CompoundTag saved = fluidizer.syncDataTo(new CompoundTag(), level.registryAccess(),
+                    ISyncableEntity.SyncReason.FullSync);
+            for (int slots : new int[]{1, 2, 3, 32767, Integer.MAX_VALUE, 0, -1, Integer.MIN_VALUE}) {
+                final CompoundTag malformed = saved.copy();
+                for (String key : new String[]{"inv", "fin0", "fin1"}) {
+                    malformed.getCompound(key).putInt("Size", slots);
+                }
+                final CompoundTag snapshot = malformed.copy();
+                fluidizer.syncDataFrom(malformed, level.registryAccess(), ISyncableEntity.SyncReason.FullSync);
+                final CompoundTag restored = fluidizer.syncDataTo(new CompoundTag(), level.registryAccess(),
+                        ISyncableEntity.SyncReason.FullSync);
+                final boolean fixedSlots = fluidizer.getItemInputs().getSlots() == 2
+                        && restored.getCompound("fin0").getInt("Size") == 1
+                        && restored.getCompound("fin1").getInt("Size") == 1
+                        && fluidizer.getInputItemAt(0).getCount() == 3
+                        && fluidizer.getInputItemAt(1).getCount() == 5
+                        && fluidizer.getInputFluidAt(0).getAmount() == 250
+                        && fluidizer.getInputFluidAt(1).getAmount() == 125
+                        && input.getTankCapacity(0) == 8000 && input.getTankCapacity(1) == 8000
+                        && malformed.equals(snapshot);
+                passed &= fixedSlots;
+                feedback(source, "fluidizerInventorySize=%s (saved=%d)"
+                        .formatted(fixedSlots ? "PASS" : "FAIL", slots));
+            }
+            final CompoundTag invalidSlots = new CompoundTag();
+            invalidSlots.putString("text", "invalid");
+            invalidSlots.put("compound", new CompoundTag());
+            invalidSlots.putLong("wrapped", 4294967296L);
+            invalidSlots.putDouble("fraction", 0.5d);
+            invalidSlots.putDouble("nan", Double.NaN);
+            for (String slotType : new String[]{"missing", "text", "compound", "wrapped", "fraction", "nan"}) {
+                final CompoundTag malformed = saved.copy();
+                for (String key : new String[]{"inv", "fin0", "fin1"}) {
+                    final var entries = malformed.getCompound(key).getList("Items", Tag.TAG_COMPOUND);
+                    final CompoundTag invalidEntry = entries.getCompound(0).copy();
+                    invalidEntry.remove("Slot");
+                    if (invalidSlots.contains(slotType)) {
+                        invalidEntry.put("Slot", invalidSlots.get(slotType).copy());
+                    }
+                    invalidEntry.getCompound("Stack").putInt(key.equals("inv") ? "count" : "amount", 13);
+                    entries.add(invalidEntry);
+                }
+                final CompoundTag snapshot = malformed.copy();
+                fluidizer.syncDataFrom(malformed, level.registryAccess(), ISyncableEntity.SyncReason.FullSync);
+                final boolean validSiblings = fluidizer.getInputItemAt(0).getCount() == 3
+                        && fluidizer.getInputItemAt(1).getCount() == 5
+                        && fluidizer.getInputFluidAt(0).getAmount() == 250
+                        && fluidizer.getInputFluidAt(1).getAmount() == 125
+                        && malformed.equals(snapshot);
+                passed &= validSiblings;
+                feedback(source, "fluidizerSlotMetadata=%s (type=%s)"
+                        .formatted(validSiblings ? "PASS" : "FAIL", slotType));
+            }
+            final CompoundTag partial = new CompoundTag();
+            partial.put("inv", new CompoundTag());
+            partial.put("fin0", new CompoundTag());
+            partial.putString("fin1", "invalid");
+            final CompoundTag partialSnapshot = partial.copy();
+            fluidizer.syncDataFrom(partial, level.registryAccess(), ISyncableEntity.SyncReason.FullSync);
+            final boolean partialPreserved = fluidizer.getInputItemAt(0).getCount() == 3
+                    && fluidizer.getInputItemAt(1).getCount() == 5
+                    && fluidizer.getInputFluidAt(0).getAmount() == 250
+                    && fluidizer.getInputFluidAt(1).getAmount() == 125
+                    && partial.equals(partialSnapshot);
+            passed &= partialPreserved;
+            feedback(source, "fluidizerInventoryPartialRestore=%s".formatted(partialPreserved ? "PASS" : "FAIL"));
+
+            final CompoundTag empty = saved.copy();
+            for (String key : new String[]{"inv", "fin0", "fin1"}) {
+                empty.getCompound(key).putInt("Size", Integer.MAX_VALUE);
+                empty.getCompound(key).put("Items", new net.minecraft.nbt.ListTag());
+            }
+            fluidizer.syncDataFrom(empty, level.registryAccess(), ISyncableEntity.SyncReason.FullSync);
+            final boolean cleared = fluidizer.getInputItemAt(0).isEmpty() && fluidizer.getInputItemAt(1).isEmpty()
+                    && fluidizer.getInputFluidAt(0).isEmpty() && fluidizer.getInputFluidAt(1).isEmpty();
+            passed &= cleared;
+            feedback(source, "fluidizerInventoryEmptyRestore=%s".formatted(cleared ? "PASS" : "FAIL"));
+        } finally {
+            fluidizer.releaseFluidHandlers();
+        }
+        return passed;
+    }
+
+    private static boolean selfTestFluidizerEnergyPersistence(CommandSourceStack source, Level level, BlockPos pos) {
+        final CompactFluidizerController fluidizer = new CompactFluidizerController(level, pos, 3, 3, 3);
+        boolean passed = true;
+        try {
+            final CompoundTag saved = fluidizer.syncDataTo(new CompoundTag(), level.registryAccess(),
+                    ISyncableEntity.SyncReason.FullSync);
+            final CompoundTag savedBuffer = saved.getCompound("energy");
+            savedBuffer.put("capacity", WideAmount.from(1).serializeToNBT());
+            savedBuffer.put("energy", WideAmount.from(12000.5d).serializeToNBT());
+            savedBuffer.put("maxInsert", WideAmount.MAX_VALUE.serializeToNBT());
+            savedBuffer.put("maxExtract", WideAmount.MAX_VALUE.serializeToNBT());
+            final CompoundTag savedSnapshot = saved.copy();
+            fluidizer.syncDataFrom(saved, level.registryAccess(), ISyncableEntity.SyncReason.FullSync);
+            final boolean capacity = fluidizer.getCapacity(EnergySystem.ForgeEnergy).longValue() == 50000
+                    && fluidizer.getEnergyStored(EnergySystem.ForgeEnergy).doubleValue() == 12000.5d
+                    && saved.equals(savedSnapshot);
+            passed &= capacity;
+            feedback(source, "fluidizerEnergyCapacityRestore=%s".formatted(capacity ? "PASS" : "FAIL"));
+
+            final boolean transfer = fluidizer.insertEnergy(EnergySystem.ForgeEnergy,
+                    WideAmount.from(5000), OperationMode.Simulate).longValue() == 1000
+                    && fluidizer.getEnergyStored(EnergySystem.ForgeEnergy).doubleValue() == 12000.5d
+                    && fluidizer.insertEnergy(EnergySystem.ForgeEnergy,
+                    WideAmount.from(5000), OperationMode.Execute).longValue() == 1000
+                    && fluidizer.getEnergyStored(EnergySystem.ForgeEnergy).doubleValue() == 13000.5d;
+            passed &= transfer;
+            feedback(source, "fluidizerEnergyTransferRestore=%s".formatted(transfer ? "PASS" : "FAIL"));
+
+            final CompoundTag legacy = saved.copy();
+            final CompoundTag legacyBuffer = new CompoundTag();
+            legacyBuffer.putDouble("capacity", 1.0d);
+            legacyBuffer.putDouble("energy", 70000.5d);
+            legacyBuffer.putDouble("maxInsert", 9999.0d);
+            legacyBuffer.putDouble("maxExtract", 9999.0d);
+            legacy.put("energy", legacyBuffer);
+            final CompoundTag legacySnapshot = legacy.copy();
+            fluidizer.syncDataFrom(legacy, level.registryAccess(), ISyncableEntity.SyncReason.FullSync);
+            final boolean overfull = fluidizer.getCapacity(EnergySystem.ForgeEnergy).longValue() == 50000
+                    && fluidizer.getEnergyStored(EnergySystem.ForgeEnergy).doubleValue() == 70000.5d
+                    && fluidizer.insertEnergy(EnergySystem.ForgeEnergy,
+                    WideAmount.from(1000), OperationMode.Simulate).isZero()
+                    && fluidizer.insertEnergy(EnergySystem.ForgeEnergy,
+                    WideAmount.from(1000), OperationMode.Execute).isZero()
+                    && fluidizer.getEnergyStored(EnergySystem.ForgeEnergy).doubleValue() == 70000.5d
+                    && legacy.equals(legacySnapshot);
+            passed &= overfull;
+            feedback(source, "fluidizerLegacyOverfullEnergy=%s".formatted(overfull ? "PASS" : "FAIL"));
+
+            final CompoundTag wrongType = new CompoundTag();
+            wrongType.putString("energy", "invalid");
+            fluidizer.syncDataFrom(wrongType, level.registryAccess(), ISyncableEntity.SyncReason.FullSync);
+            final boolean preserved = fluidizer.getCapacity(EnergySystem.ForgeEnergy).longValue() == 50000
+                    && fluidizer.getEnergyStored(EnergySystem.ForgeEnergy).doubleValue() == 70000.5d
+                    && wrongType.getString("energy").equals("invalid");
+            passed &= preserved;
+            feedback(source, "fluidizerWrongEnergyType=%s".formatted(preserved ? "PASS" : "FAIL"));
+
+            final CompoundTag malformed = saved.copy();
+            malformed.getCompound("energy").putString("maxInsert", "invalid");
+            malformed.getCompound("energy").putString("maxExtract", "invalid");
+            final CompoundTag malformedSnapshot = malformed.copy();
+            fluidizer.syncDataFrom(malformed, level.registryAccess(), ISyncableEntity.SyncReason.FullSync);
+            final boolean validEnergy = fluidizer.getEnergyStored(EnergySystem.ForgeEnergy).doubleValue() == 12000.5d
+                    && fluidizer.insertEnergy(EnergySystem.ForgeEnergy,
+                    WideAmount.from(5000), OperationMode.Simulate).longValue() == 1000
+                    && malformed.equals(malformedSnapshot);
+            passed &= validEnergy;
+            feedback(source, "fluidizerEnergyMalformedSibling=%s".formatted(validEnergy ? "PASS" : "FAIL"));
+
+            malformed.getCompound("energy").put("energy", new CompoundTag());
+            final CompoundTag invalidSnapshot = malformed.copy();
+            fluidizer.syncDataFrom(malformed, level.registryAccess(), ISyncableEntity.SyncReason.FullSync);
+            final boolean invalidEnergy = fluidizer.getEnergyStored(EnergySystem.ForgeEnergy).isZero()
+                    && fluidizer.getCapacity(EnergySystem.ForgeEnergy).longValue() == 50000
+                    && fluidizer.insertEnergy(EnergySystem.ForgeEnergy,
+                    WideAmount.from(5000), OperationMode.Simulate).longValue() == 1000
+                    && malformed.equals(invalidSnapshot);
+            passed &= invalidEnergy;
+            feedback(source, "fluidizerMalformedEnergyRestore=%s".formatted(invalidEnergy ? "PASS" : "FAIL"));
+        } finally {
+            fluidizer.releaseFluidHandlers();
+        }
+        return passed;
+    }
+
+    private static boolean selfTestFluidizerCapacity(CommandSourceStack source, Level level, BlockPos pos, Fluid fluid) {
+        final CompactFluidizerController original = new CompactFluidizerController(level, pos, 3, 3, 3);
+        final CompactFluidizerController expanded = new CompactFluidizerController(level, pos, 5, 5, 5);
+        final CompactFluidizerController reduced = new CompactFluidizerController(level, pos, 3, 3, 3);
+        boolean passed = true;
+        try {
+            original.getOutputTank().setContent(new FluidStack(fluid, 3000));
+            final CompoundTag originalTag = original.syncDataTo(new CompoundTag(), level.registryAccess(),
+                    ISyncableEntity.SyncReason.FullSync);
+            final CompoundTag originalSnapshot = originalTag.copy();
+            expanded.syncDataFrom(originalTag, level.registryAccess(), ISyncableEntity.SyncReason.FullSync);
+            final boolean expansion = expanded.getOutputTank().getCapacity() == 108000
+                    && expanded.getOutputTank().getFluidAmount() == 3000
+                    && originalTag.equals(originalSnapshot);
+            passed &= expansion;
+            feedback(source, "fluidizerCapacityExpansion=%s".formatted(expansion ? "PASS" : "FAIL"));
+
+            final CompoundTag partialOutput = new CompoundTag();
+            partialOutput.putInt("capacity", 1);
+            final CompoundTag partialTag = new CompoundTag();
+            partialTag.put("out", partialOutput);
+            expanded.syncDataFrom(partialTag, level.registryAccess(), ISyncableEntity.SyncReason.FullSync);
+            final boolean partialRestore = expanded.getOutputTank().getCapacity() == 108000
+                    && expanded.getOutputTank().getFluidAmount() == 3000
+                    && partialOutput.getInt("capacity") == 1;
+            passed &= partialRestore;
+            feedback(source, "fluidizerPartialOutputRestore=%s".formatted(partialRestore ? "PASS" : "FAIL"));
+
+            expanded.getOutputTank().setContent(new FluidStack(fluid, 12000));
+            final CompoundTag expandedTag = expanded.syncDataTo(new CompoundTag(), level.registryAccess(),
+                    ISyncableEntity.SyncReason.FullSync);
+            final CompoundTag expandedSnapshot = expandedTag.copy();
+            reduced.syncDataFrom(expandedTag, level.registryAccess(), ISyncableEntity.SyncReason.FullSync);
+            final boolean shrink = reduced.getOutputTank().getCapacity() == 4000
+                    && reduced.getOutputTank().getFluidAmount() == 12000
+                    && expandedTag.equals(expandedSnapshot);
+            passed &= shrink;
+            feedback(source, "fluidizerCapacityShrink=%s".formatted(shrink ? "PASS" : "FAIL"));
+
+            final IFluidHandler output = reduced.getFluidHandler(it.zerono.mods.zerocore.lib.data.IoDirection.Output).orElseThrow();
+            final boolean simulatedDrain = output.drain(9000, IFluidHandler.FluidAction.SIMULATE).getAmount() == 9000
+                    && reduced.getOutputTank().getFluidAmount() == 12000;
+            final boolean executedDrain = output.drain(9000, IFluidHandler.FluidAction.EXECUTE).getAmount() == 9000
+                    && reduced.getOutputTank().getFluidAmount() == 3000;
+            passed &= simulatedDrain && executedDrain;
+            feedback(source, "fluidizerOverfullDrain=%s".formatted(simulatedDrain && executedDrain ? "PASS" : "FAIL"));
+        } finally {
+            original.releaseFluidHandlers();
+            expanded.releaseFluidHandlers();
+            reduced.releaseFluidHandlers();
+        }
+        return passed;
     }
 
     // ------------------------------------------------------------------
@@ -418,6 +1176,32 @@ public final class DevCommands {
                 tile.isControllerInitFailed(),
                 controller.getEnergyStored(EnergySystem.ForgeEnergy).longValue(),
                 controller.getCapacity(EnergySystem.ForgeEnergy).longValue()));
+
+        final var energyCapability = level.getCapability(Capabilities.EnergyStorage.BLOCK, pos, null);
+        feedback(source, "tileRemoved=%s controllerReady=%s energyCapability=%s capabilityEnergy=%d/%d".formatted(
+                tile.isRemoved(), tile.isControllerReady(), energyCapability != null,
+                energyCapability == null ? 0 : energyCapability.getEnergyStored(),
+                energyCapability == null ? 0 : energyCapability.getMaxEnergyStored()));
+        try {
+            final Field tickingField = AbstractCompactMachineTileEntity.class.getDeclaredField("TICKING_MACHINES");
+            tickingField.setAccessible(true);
+            feedback(source, "tickRegistered=%s simulatedExtract=%d".formatted(
+                    ((java.util.Set<?>) tickingField.get(null)).contains(tile),
+                    controller.extractEnergy(EnergySystem.ForgeEnergy, WideAmount.asImmutable(1000), OperationMode.Simulate).longValue()));
+        } catch (ReflectiveOperationException exception) {
+            source.sendFailure(Component.literal("tick registry inspection failed: " + exception));
+        }
+        for (net.minecraft.core.Direction side : net.minecraft.core.Direction.values()) {
+            final BlockPos neighborPos = pos.relative(side);
+            if (!level.isLoaded(neighborPos)) {
+                continue;
+            }
+            final var neighborEnergy = level.getCapability(Capabilities.EnergyStorage.BLOCK, neighborPos, side.getOpposite());
+            if (neighborEnergy != null) {
+                feedback(source, "energyNeighbor=%s stored=%d accepts=%d".formatted(side,
+                        neighborEnergy.getEnergyStored(), neighborEnergy.receiveEnergy(1000, true)));
+            }
+        }
 
         // 1) 世界侧能力视图（管道看到的）
         final IFluidHandler worldHandler = fluidHandler(level, pos);

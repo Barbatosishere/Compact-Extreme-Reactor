@@ -41,7 +41,7 @@ public class CompactFluidizerItemHandler implements IItemHandler {
 
     @Override
     public int getSlots() {
-        return this.holder() == null ? 0 : 2;
+        return this._released ? 0 : 2;
     }
 
     @NotNull

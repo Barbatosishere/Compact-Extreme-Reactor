@@ -18,6 +18,7 @@ import it.zerono.mods.zerocore.lib.data.IoDirection;
 import it.zerono.mods.zerocore.lib.data.WideAmount;
 import it.zerono.mods.zerocore.lib.data.geometry.CuboidBoundingBox;
 import it.zerono.mods.zerocore.lib.data.nbt.ISyncableEntity;
+import it.zerono.mods.zerocore.lib.energy.EnergySystem;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.core.registries.Registries;
@@ -159,11 +160,14 @@ public class CompactTurbineController extends MultiblockTurbine implements IComp
         // 冷凝丢失补偿需要在 ER 模拟前后夹读容器，见 compensateCondensationLoss
         final FluidContainer container = (FluidContainer) this.getFluidContainer();
         final int steamBefore = container.getGasAmount();
+        if (steamBefore <= 0 || this.getVentSetting() == VentSetting.VentAll) {
+            this.updateMultiblockEntity();
+            return;
+        }
         final int waterBefore = container.getLiquidAmount();
         // 冷凝映射必须在模拟前捕获：bug 触发后蒸汽槽已空，无法再从容器解析蒸汽类型
-        final IMapping<Vapor, Coolant> condensation = container.getVapor()
-                .flatMap(TransitionsRegistry::get)
-                .orElse(null);
+        final IMapping<Vapor, Coolant> condensation = container.mapVapor(
+                vapor -> TransitionsRegistry.get(vapor).orElse(null), null);
 
         this.updateMultiblockEntity();
 
@@ -208,7 +212,8 @@ public class CompactTurbineController extends MultiblockTurbine implements IComp
      */
     @Override
     public void syncDataFrom(CompoundTag tag, HolderLookup.Provider registries, ISyncableEntity.SyncReason reason) {
-        super.syncDataFrom(tag, registries, reason);
+        super.syncDataFrom(GeneratorEnergyPersistence.withCapacity(tag,
+                this.getEnergyBuffer().getCapacity(EnergySystem.REFERENCE), WideAmount::serializeToNBT), registries, reason);
         this.getEnergyBuffer().setMaxInsert(WideAmount.MAX_VALUE);
         this.setInductorEngaged(true);
     }

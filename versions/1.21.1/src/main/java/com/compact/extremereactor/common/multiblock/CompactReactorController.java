@@ -332,7 +332,8 @@ public class CompactReactorController extends MultiblockReactor implements IComp
 
     @Override
     public void syncDataFrom(CompoundTag tag, HolderLookup.Provider registries, ISyncableEntity.SyncReason reason) {
-        super.syncDataFrom(tag, registries, reason);
+        super.syncDataFrom(GeneratorEnergyPersistence.withCapacity(tag,
+                this.getEnergyBuffer().getCapacity(EnergySystem.REFERENCE), WideAmount::serializeToNBT), registries, reason);
         // 优先读新 key（cer: 前缀），兼容旧 beta16 之前的无前缀存档
         // 防御：恶意 NBT 可能写入 -50（byte 范围 -128~127），必须 clamp 到 [0, 100]
         // 否则 controlRodFactor = (100-(-50))/100 = 1.5，反应堆产生 1.5x 能量，破坏平衡

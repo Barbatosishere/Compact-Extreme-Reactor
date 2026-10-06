@@ -3,10 +3,10 @@ package com.compact.extremereactor.common.menu;
 import com.compact.extremereactor.common.Content;
 import com.compact.extremereactor.common.multiblock.ICompactController;
 import com.compact.extremereactor.common.tile.CompactReactorTileEntity;
+import net.minecraft.core.BlockPos;
 import it.zerono.mods.zerocore.lib.energy.EnergySystem;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ContainerData;
 import net.minecraft.world.inventory.SimpleContainerData;
 import net.minecraft.world.item.ItemStack;
@@ -21,7 +21,7 @@ import org.jetbrains.annotations.Nullable;
  *   7: 燃料容量  8: 控制棒插入比例  9: 激活状态  10: 发电量  11: 初始化失败
  *   12: 堆芯温度  13: posReady 标记  14: 控制器就绪标记
  */
-public class CompactReactorMenu extends AbstractContainerMenu {
+public class CompactReactorMenu extends AbstractCompactMachineMenu {
 
     public static final int DATA_POS_X = 0;
     public static final int DATA_POS_Y = 1;
@@ -44,8 +44,6 @@ public class CompactReactorMenu extends AbstractContainerMenu {
     public static final int DATA_CONTROLLER_READY = 14;
     public static final int DATA_COUNT = 15;
 
-    private final PackedContainerData _data;
-
     @Nullable
     private final CompactReactorTileEntity _tile;
 
@@ -63,11 +61,8 @@ public class CompactReactorMenu extends AbstractContainerMenu {
 
     private CompactReactorMenu(int containerId, Inventory playerInventory,
                                @Nullable CompactReactorTileEntity tile, PackedContainerData data) {
-        super(Content.COMPACT_REACTOR_MENU.get(), containerId);
+        super(Content.COMPACT_REACTOR_MENU.get(), containerId, data);
         this._tile = tile;
-        this._data = data;
-
-        this.addDataSlots(data);
     }
 
     @Override
@@ -96,6 +91,11 @@ public class CompactReactorMenu extends AbstractContainerMenu {
     /** 读取同步数据槽。 */
     public int getData(int index) {
         return this._data.getValue(index);
+    }
+
+    /** 快速拒绝不属于当前菜单的网络包，避免访问远处区块。 */
+    public boolean isForPosition(BlockPos pos) {
+        return this._tile != null && this._tile.getBlockPos().equals(pos);
     }
 
     /** 服务端校验控制包是否仍绑定到玩家当前打开的这个机器。 */

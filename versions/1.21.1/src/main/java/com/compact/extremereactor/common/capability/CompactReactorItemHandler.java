@@ -217,6 +217,9 @@ public class CompactReactorItemHandler implements IItemHandler {
         if (this._released) {
             return 0;
         }
+        if (slot < 0 || slot >= this.getSlots()) {
+            return 0;
+        }
         if (slot != SLOT_WASTE_OUT) {
             return 64;
         }
