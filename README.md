@@ -84,6 +84,12 @@ Artifacts are at `versions/<mc>/build/libs/compactextremereactor-<version>-<Load
 ## ⚠️ Known limitations
 
 - Forge 1.20.1 dev runs (`runServer`/`runClient`) fail because the bundled ZeroCore/ER2 dependency jars are production (SRG-mapped) builds; production installs are unaffected.
+- Compact reactor radiation uses one upward ray to avoid multiplying simulated heat across six directions. It does not reproduce a real fuel-rod layout or its directional control-rod heat response.
+- Reactor and turbine simulation depends on ZeroCore's internal bounding-box field. Compatibility is checked when a machine is assembled; an incompatible API disables that machine through the initialization error handler and records the cause.
+
+Fluid capabilities combine input and output tank views. Tank indices describe contents and validity; the `IFluidHandler.fill/drain` methods do not take a tank index. Filling routes to inputs and draining routes to outputs. A reactor fluid registered as both fuel and coolant is routed as fuel; avoid overlapping mappings when automation must distinguish the two. Untyped reactor draining extracts steam only; extracting waste requires a fluid-specific request.
+
+A turbine with a full FE buffer pauses steam intake, condensation and generation together; after energy extraction it resumes automatically. It does not consume steam while paused, so there is no condensation to replay. Fluidizers select fluid mixing when both input tanks are occupied, then solid mixing or solid processing; dedicate machines to one input mode when automating both kinds of ingredients.
 
 ## ⚙️ Config (`config/compactextremereactor-common.toml`)
 

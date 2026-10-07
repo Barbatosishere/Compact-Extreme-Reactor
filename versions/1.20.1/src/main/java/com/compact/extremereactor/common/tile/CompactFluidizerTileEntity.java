@@ -60,6 +60,7 @@ public class CompactFluidizerTileEntity extends AbstractCompactMachineTileEntity
         final ICompactController controller = this._controller;
         if (controller != null) {
             controller.tick();
+            this.setChanged();
         }
     }
 

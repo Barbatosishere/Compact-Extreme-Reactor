@@ -62,23 +62,6 @@ public class CompactTurbineController extends MultiblockTurbine implements IComp
     private static final java.util.concurrent.atomic.AtomicBoolean _hasWarnedCoilMissing =
             new java.util.concurrent.atomic.AtomicBoolean(false);
 
-    /**
-     * 基类私有字段 {@code _boundingBox} 的反射引用（静态缓存，避免每次
-     * recalculateCoords() 都执行 getDeclaredField）。ZeroCore 升级若改名会在此
-     * 抛异常并中止 mod 加载（fail-fast），比运行时静默失败更易发现。
-     */
-    private static final java.lang.reflect.Field BOUNDING_BOX_FIELD;
-
-    static {
-        try {
-            BOUNDING_BOX_FIELD = it.zerono.mods.zerocore.lib.multiblock.AbstractMultiblockController.class
-                    .getDeclaredField("_boundingBox");
-            BOUNDING_BOX_FIELD.setAccessible(true);
-        } catch (NoSuchFieldException e) {
-            throw new IllegalStateException("无法找到 AbstractMultiblockController._boundingBox 字段（ZeroCore 升级？）", e);
-        }
-    }
-
     private final BlockPos _anchor;
     private final int _sizeX;
     private final int _sizeY;
@@ -143,11 +126,7 @@ public class CompactTurbineController extends MultiblockTurbine implements IComp
      */
     @Override
     public void recalculateCoords() {
-        try {
-            BOUNDING_BOX_FIELD.set(this, new CuboidBoundingBox(this._anchor, this._anchor));
-        } catch (ReflectiveOperationException e) {
-            CompactExtremeReactor.LOGGER.error("无法设置涡轮机 _boundingBox @{}", this._anchor, e);
-        }
+        CompactControllerBounds.setAnchor(this, this._anchor);
     }
 
     /** 每个服务端游戏刻驱动一次涡轮机逻辑。 */

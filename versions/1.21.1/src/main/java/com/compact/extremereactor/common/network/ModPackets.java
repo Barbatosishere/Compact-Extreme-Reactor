@@ -73,6 +73,14 @@ public final class ModPackets {
     /** 注册玩家登出清理处理器（由主类在 mod 构造时调用一次）。 */
     public static void registerPlayerCleanupHandler() {
         net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(ModPackets::handlePlayerLoggedOut);
+        net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(ModPackets::handleServerStopped);
+    }
+
+    private static void handleServerStopped(net.neoforged.neoforge.event.server.ServerStoppedEvent event) {
+        _lastControlRodTick.clear();
+        _lastToggleTick.clear();
+        _lastVoidWasteTick.clear();
+        _lastClearInputsTick.clear();
     }
 
     private static void handlePlayerLoggedOut(
