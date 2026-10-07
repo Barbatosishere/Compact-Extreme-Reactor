@@ -16,6 +16,7 @@ import net.minecraftforge.network.NetworkEvent;
 import net.minecraftforge.network.NetworkRegistry;
 import net.minecraftforge.network.simple.SimpleChannel;
 
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
 
 /**
@@ -56,19 +57,58 @@ public final class ModPackets {
             new java.util.concurrent.ConcurrentHashMap<>();
     private static final int ROD_PACKET_INTERVAL_TICKS = 1;
     private static final int ACTION_PACKET_INTERVAL_TICKS = 5;
+    private static final long PLAYER_PURGE_INTERVAL_TICKS = 200L;
+    private static final AtomicLong _lastPlayerPurgeTick = new AtomicLong(-1L);
 
     private static boolean tryAcquirePacketSlot(
             java.util.concurrent.ConcurrentMap<java.util.UUID, Long> lastTicks,
             ServerPlayer player,
             int intervalTicks) {
-        final long nowTick = player.server.getTickCount();
+        final long nowTick = Integer.toUnsignedLong(player.server.getTickCount());
         final java.util.UUID playerId = player.getUUID();
-        final Long lastTick = lastTicks.get(playerId);
-        if (lastTick != null && nowTick >= lastTick && nowTick - lastTick < intervalTicks) {
-            return false;
+        maybePurgeStalePlayers(player, nowTick);
+        while (true) {
+            final Long lastTick = lastTicks.get(playerId);
+            if (lastTick != null && elapsedTicks(nowTick, lastTick) < intervalTicks) {
+                return false;
+            }
+            if (lastTick == null) {
+                if (lastTicks.putIfAbsent(playerId, nowTick) == null) {
+                    return true;
+                }
+            } else if (lastTicks.replace(playerId, lastTick, nowTick)) {
+                return true;
+            }
         }
-        lastTicks.put(playerId, nowTick);
-        return true;
+    }
+
+    private static void maybePurgeStalePlayers(ServerPlayer player, long nowTick) {
+        if (_lastControlRodTick.size() <= 256 && _lastToggleTick.size() <= 256
+                && _lastVoidWasteTick.size() <= 256 && _lastClearInputsTick.size() <= 256) {
+            return;
+        }
+        final long previous = _lastPlayerPurgeTick.get();
+        if (previous != -1L && elapsedTicks(nowTick, previous) < PLAYER_PURGE_INTERVAL_TICKS) {
+            return;
+        }
+        if (!_lastPlayerPurgeTick.compareAndSet(previous, nowTick)) {
+            return;
+        }
+        final net.minecraft.server.players.PlayerList players = player.server.getPlayerList();
+        removeOfflinePlayers(_lastControlRodTick, players);
+        removeOfflinePlayers(_lastToggleTick, players);
+        removeOfflinePlayers(_lastVoidWasteTick, players);
+        removeOfflinePlayers(_lastClearInputsTick, players);
+    }
+
+    private static void removeOfflinePlayers(
+            java.util.concurrent.ConcurrentMap<java.util.UUID, Long> ticks,
+            net.minecraft.server.players.PlayerList players) {
+        ticks.entrySet().removeIf(entry -> players.getPlayer(entry.getKey()) == null);
+    }
+
+    private static long elapsedTicks(long nowTick, long previousTick) {
+        return (nowTick - previousTick) & 0xFFFF_FFFFL;
     }
 
     /** 注册玩家登出清理处理器（由主类在 mod 构造时调用一次）。 */
@@ -82,6 +122,7 @@ public final class ModPackets {
         _lastToggleTick.clear();
         _lastVoidWasteTick.clear();
         _lastClearInputsTick.clear();
+        _lastPlayerPurgeTick.set(-1L);
     }
 
     private static void handlePlayerLoggedOut(

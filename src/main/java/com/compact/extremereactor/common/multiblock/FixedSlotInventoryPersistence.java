@@ -10,40 +10,59 @@ public final class FixedSlotInventoryPersistence {
     }
 
     public static CompoundTag withSlots(CompoundTag tag, String inventoryKey, int slots) {
+        if (!needsNormalization(tag, inventoryKey, slots)) {
+            return tag;
+        }
+        final CompoundTag restored = tag.copy();
+        normalizeInPlace(restored, inventoryKey, slots);
+        return restored;
+    }
+
+    static boolean needsNormalization(CompoundTag tag, String inventoryKey, int slots) {
+        if (!tag.contains(inventoryKey)) {
+            return false;
+        }
         if (!tag.contains(inventoryKey, Tag.TAG_COMPOUND)) {
-            if (!tag.contains(inventoryKey)) {
-                return tag;
-            }
-            final CompoundTag restored = tag.copy();
-            restored.remove(inventoryKey);
-            return restored;
+            return true;
         }
         final CompoundTag inventory = tag.getCompound(inventoryKey);
         final int savedSlots = inventory.getInt("Size");
-        CompoundTag restored = null;
         if (savedSlots > 0 && savedSlots != slots) {
-            restored = tag.copy();
-            restored.getCompound(inventoryKey).putInt("Size", slots);
+            return true;
         }
         final ListTag items = inventory.getList("Items", Tag.TAG_COMPOUND);
         for (int index = 0; index < items.size(); index++) {
             if (!isValidSlot(items.getCompound(index), slots)) {
-                if (restored == null) {
-                    restored = tag.copy();
-                }
-                final ListTag restoredItems = restored.getCompound(inventoryKey).getList("Items", Tag.TAG_COMPOUND);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    static void normalizeInPlace(CompoundTag tag, String inventoryKey, int slots) {
+        if (!tag.contains(inventoryKey, Tag.TAG_COMPOUND)) {
+            tag.remove(inventoryKey);
+            return;
+        }
+        final CompoundTag inventory = tag.getCompound(inventoryKey);
+        final int savedSlots = inventory.getInt("Size");
+        if (savedSlots > 0 && savedSlots != slots) {
+            inventory.putInt("Size", slots);
+        }
+        final ListTag items = inventory.getList("Items", Tag.TAG_COMPOUND);
+        for (int index = 0; index < items.size(); index++) {
+            if (!isValidSlot(items.getCompound(index), slots)) {
                 final ListTag validItems = new ListTag();
-                for (int restoredIndex = 0; restoredIndex < restoredItems.size(); restoredIndex++) {
-                    final CompoundTag item = restoredItems.getCompound(restoredIndex);
+                for (int restoredIndex = 0; restoredIndex < items.size(); restoredIndex++) {
+                    final CompoundTag item = items.getCompound(restoredIndex);
                     if (isValidSlot(item, slots)) {
                         validItems.add(item);
                     }
                 }
-                restored.getCompound(inventoryKey).put("Items", validItems);
+                inventory.put("Items", validItems);
                 break;
             }
         }
-        return restored == null ? tag : restored;
     }
 
     private static boolean isValidSlot(CompoundTag item, int slots) {

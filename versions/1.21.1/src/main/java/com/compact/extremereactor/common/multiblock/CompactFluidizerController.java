@@ -625,32 +625,46 @@ public class CompactFluidizerController
     public void syncDataFrom(CompoundTag tag, HolderLookup.Provider registries, ISyncableEntity.SyncReason reason) {
         super.syncDataFrom(tag, registries, reason);
 
-        this.syncBooleanElementFrom(NBT_ACTIVE, tag, registries, active -> this._active = active);
+        final boolean copyTag = tag.contains(NBT_ENERGY)
+                || FixedSlotInventoryPersistence.needsNormalization(tag, NBT_ITEMS, 2)
+                || FixedSlotInventoryPersistence.needsNormalization(tag, NBT_FLUID_IN_0, 1)
+                || FixedSlotInventoryPersistence.needsNormalization(tag, NBT_FLUID_IN_1, 1);
+        CompoundTag restoredTag = copyTag ? tag.copy() : tag;
+        if (copyTag) {
+            GeneratorEnergyPersistence.normalizeInPlace(restoredTag, NBT_ENERGY, ENERGY_CAPACITY,
+                    WideAmount::serializeToNBT);
+            FixedSlotInventoryPersistence.normalizeInPlace(restoredTag, NBT_ITEMS, 2);
+            FixedSlotInventoryPersistence.normalizeInPlace(restoredTag, NBT_FLUID_IN_0, 1);
+            FixedSlotInventoryPersistence.normalizeInPlace(restoredTag, NBT_FLUID_IN_1, 1);
+        }
+
+        this.syncBooleanElementFrom(NBT_ACTIVE, restoredTag, registries, active -> this._active = active);
         this.syncChildDataEntityFrom(this._energyBuffer, NBT_ENERGY,
-                GeneratorEnergyPersistence.withCapacity(tag, NBT_ENERGY, ENERGY_CAPACITY,
-                        WideAmount::serializeToNBT), registries, reason);
+                restoredTag, registries, reason);
         this._energyBuffer.setMaxTransfer(ENERGY_TRANSFER_LIMIT);
-        if (tag.contains(NBT_OUTPUT)) {
-            final CompoundTag outputTag = tag.getCompound(NBT_OUTPUT).copy();
+        if (restoredTag.contains(NBT_OUTPUT)) {
+            final CompoundTag outputTag = copyTag
+                    ? restoredTag.getCompound(NBT_OUTPUT)
+                    : restoredTag.getCompound(NBT_OUTPUT).copy();
             outputTag.remove("capacity");
             this._outputTank.syncDataFrom(outputTag, registries, reason);
         }
         this.syncChildDataEntityFrom(this._itemInputs, NBT_ITEMS,
-                FixedSlotInventoryPersistence.withSlots(tag, NBT_ITEMS, 2), registries, reason);
+                restoredTag, registries, reason);
         this.syncChildDataEntityFrom(this._fluidInputs0, NBT_FLUID_IN_0,
-                FixedSlotInventoryPersistence.withSlots(tag, NBT_FLUID_IN_0, 1), registries, reason);
+                restoredTag, registries, reason);
         this.syncChildDataEntityFrom(this._fluidInputs1, NBT_FLUID_IN_1,
-                FixedSlotInventoryPersistence.withSlots(tag, NBT_FLUID_IN_1, 1), registries, reason);
+                restoredTag, registries, reason);
 
         this._recipes = Content.Recipes.FLUIDIZER_RECIPE_TYPE.get().getRecipes();
         this.updateMode();
         // 先确定模式，再 refresh 和恢复进度，避免首个 tick 切换模式时清除刚读入的进度。
         this._solidHolder.refresh();
-        this.syncChildDataEntityFrom(this._solidHolder, NBT_RECIPE_SOLID, tag, registries, reason);
+        this.syncChildDataEntityFrom(this._solidHolder, NBT_RECIPE_SOLID, restoredTag, registries, reason);
         this._solidMixingHolder.refresh();
-        this.syncChildDataEntityFrom(this._solidMixingHolder, NBT_RECIPE_SOLID_MIXING, tag, registries, reason);
+        this.syncChildDataEntityFrom(this._solidMixingHolder, NBT_RECIPE_SOLID_MIXING, restoredTag, registries, reason);
         this._fluidMixingHolder.refresh();
-        this.syncChildDataEntityFrom(this._fluidMixingHolder, NBT_RECIPE_FLUID_MIXING, tag, registries, reason);
+        this.syncChildDataEntityFrom(this._fluidMixingHolder, NBT_RECIPE_FLUID_MIXING, restoredTag, registries, reason);
 
         this._modeDirty = true;
     }

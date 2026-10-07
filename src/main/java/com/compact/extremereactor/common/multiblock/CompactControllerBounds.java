@@ -17,7 +17,7 @@ public final class CompactControllerBounds {
         try {
             getBoundingBoxField().set(controller, new CuboidBoundingBox(anchor, anchor));
         } catch (ReflectiveOperationException | RuntimeException exception) {
-            throw new IllegalStateException("Unsupported ZeroCore bounding-box API; cannot initialize compact machine at "
+            throw new IllegalStateException("Unsupported ZeroCore bounding-box API; cannot update compact machine at "
                     + anchor, exception);
         }
     }
@@ -25,8 +25,11 @@ public final class CompactControllerBounds {
     private static synchronized Field getBoundingBoxField() throws ReflectiveOperationException {
         if (_boundingBoxField == null) {
             final Field field = AbstractMultiblockController.class.getDeclaredField("_boundingBox");
-            if (field.getType() != CuboidBoundingBox.class || !field.trySetAccessible()) {
+            if (field.getType() != CuboidBoundingBox.class) {
                 throw new IllegalAccessException("ZeroCore _boundingBox is unavailable or has an incompatible type");
+            }
+            if (!field.trySetAccessible()) {
+                throw new IllegalAccessException("ZeroCore _boundingBox is inaccessible");
             }
             _boundingBoxField = field;
         }

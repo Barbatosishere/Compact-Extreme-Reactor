@@ -17,6 +17,9 @@ import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Supplier;
+
 /**
  * 自定义网络数据包：客户端 → 服务端的机器控制指令。
  *
@@ -43,7 +46,7 @@ public final class ModPackets {
      * 每玩家每服务端 tick 最多处理 1 个控制棒包——超过则丢弃。
      * 防止恶意客户端用 auto-clicker 工具高频点击制造服务端资源压力。
      * 底层 ConcurrentHashMap：当前仅在服务端主线程读写（putIfAbsent 原子更新），
-     * 无锁语义为未来潜在的非主线程路径预留。
+     * 使用 putIfAbsent/replace 原子更新，避免并发路径下检查与写入之间出现竞态。
      */
     private static final java.util.concurrent.ConcurrentMap<java.util.UUID, Long> _lastControlRodTick =
             new java.util.concurrent.ConcurrentHashMap<>();
@@ -55,19 +58,57 @@ public final class ModPackets {
             new java.util.concurrent.ConcurrentHashMap<>();
     private static final int ROD_PACKET_INTERVAL_TICKS = 1;
     private static final int ACTION_PACKET_INTERVAL_TICKS = 5;
+    private static final long PLAYER_PURGE_INTERVAL_TICKS = 200L;
+    private static final AtomicLong _lastPlayerPurgeTick = new AtomicLong(-1L);
 
     private static boolean tryAcquirePacketSlot(
             java.util.concurrent.ConcurrentMap<java.util.UUID, Long> lastTicks,
             ServerPlayer player,
             int intervalTicks) {
-        final long nowTick = player.server.getTickCount();
+        final long nowTick = Integer.toUnsignedLong(player.server.getTickCount());
         final java.util.UUID playerId = player.getUUID();
-        final Long lastTick = lastTicks.get(playerId);
-        if (lastTick != null && nowTick >= lastTick && nowTick - lastTick < intervalTicks) {
-            return false;
+        maybePurgeStalePlayers(player, nowTick);
+        while (true) {
+            final Long lastTick = lastTicks.get(playerId);
+            if (lastTick != null && elapsedTicks(nowTick, lastTick) < intervalTicks) {
+                return false;
+            }
+            if (lastTick == null) {
+                if (lastTicks.putIfAbsent(playerId, nowTick) == null) {
+                    return true;
+                }
+            } else if (lastTicks.replace(playerId, lastTick, nowTick)) {
+                return true;
+            }
         }
-        lastTicks.put(playerId, nowTick);
-        return true;
+    }
+
+    private static void maybePurgeStalePlayers(ServerPlayer player, long nowTick) {
+        if (_lastControlRodTick.size() <= 256 && _lastToggleTick.size() <= 256
+                && _lastVoidWasteTick.size() <= 256 && _lastClearInputsTick.size() <= 256) {
+            return;
+        }
+        final long previous = _lastPlayerPurgeTick.get();
+        if (previous != -1L && elapsedTicks(nowTick, previous) < PLAYER_PURGE_INTERVAL_TICKS) {
+            return;
+        }
+        if (!_lastPlayerPurgeTick.compareAndSet(previous, nowTick)) {
+            return;
+        }
+        removeOfflinePlayers(_lastControlRodTick, player.server.getPlayerList());
+        removeOfflinePlayers(_lastToggleTick, player.server.getPlayerList());
+        removeOfflinePlayers(_lastVoidWasteTick, player.server.getPlayerList());
+        removeOfflinePlayers(_lastClearInputsTick, player.server.getPlayerList());
+    }
+
+    private static void removeOfflinePlayers(
+            java.util.concurrent.ConcurrentMap<java.util.UUID, Long> ticks,
+            net.minecraft.server.players.PlayerList players) {
+        ticks.entrySet().removeIf(entry -> players.getPlayer(entry.getKey()) == null);
+    }
+
+    private static long elapsedTicks(long nowTick, long previousTick) {
+        return (nowTick - previousTick) & 0xFFFF_FFFFL;
     }
 
     /** 注册玩家登出清理处理器（由主类在 mod 构造时调用一次）。 */
@@ -81,6 +122,7 @@ public final class ModPackets {
         _lastToggleTick.clear();
         _lastVoidWasteTick.clear();
         _lastClearInputsTick.clear();
+        _lastPlayerPurgeTick.set(-1L);
     }
 
     private static void handlePlayerLoggedOut(

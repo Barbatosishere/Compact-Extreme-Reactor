@@ -17,16 +17,21 @@ public final class GeneratorEnergyPersistence {
 
     public static CompoundTag withCapacity(CompoundTag tag, String bufferKey, WideAmount capacity,
                                             Function<WideAmount, Tag> serialize) {
-        if (!tag.contains(bufferKey, Tag.TAG_COMPOUND)) {
-            if (!tag.contains(bufferKey)) {
-                return tag;
-            }
-            final CompoundTag restored = tag.copy();
-            restored.remove(bufferKey);
-            return restored;
+        if (!tag.contains(bufferKey)) {
+            return tag;
         }
         final CompoundTag restored = tag.copy();
-        final CompoundTag buffer = restored.getCompound(bufferKey);
+        normalizeInPlace(restored, bufferKey, capacity, serialize);
+        return restored;
+    }
+
+    static void normalizeInPlace(CompoundTag tag, String bufferKey, WideAmount capacity,
+                                 Function<WideAmount, Tag> serialize) {
+        if (!tag.contains(bufferKey, Tag.TAG_COMPOUND)) {
+            tag.remove(bufferKey);
+            return;
+        }
+        final CompoundTag buffer = tag.getCompound(bufferKey);
         if (!buffer.getBoolean("wide") || !isWideAmount(buffer, "energy")
                 || !isWideAmount(buffer, "capacity") || !isWideAmount(buffer, "maxInsert")
                 || !isWideAmount(buffer, "maxExtract")) {
@@ -36,7 +41,6 @@ public final class GeneratorEnergyPersistence {
             buffer.putByte("wide", (byte) 1);
         }
         buffer.put("capacity", serialize.apply(capacity));
-        return restored;
     }
 
     private static boolean isWideAmount(CompoundTag buffer, String key) {
