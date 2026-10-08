@@ -2,6 +2,8 @@ package com.compact.extremereactor.common.menu;
 
 import net.minecraft.world.inventory.ContainerData;
 
+import java.util.Arrays;
+
 /**
  * 将每个逻辑 int 拆成两个 16 位数据槽。
  *
@@ -14,11 +16,28 @@ final class PackedContainerData implements ContainerData {
     private final ContainerData _source;
     private final int _logicalCount;
     private final boolean _serverEncoding;
+    private final int[] _syncValues;
+    private final boolean[] _syncRead;
+    private int _syncDepth;
 
     PackedContainerData(ContainerData source, int logicalCount, boolean serverEncoding) {
         this._source = source;
         this._logicalCount = logicalCount;
         this._serverEncoding = serverEncoding;
+        this._syncValues = new int[serverEncoding ? logicalCount : 0];
+        this._syncRead = new boolean[serverEncoding ? logicalCount : 0];
+    }
+
+    void beginSync() {
+        if (this._serverEncoding && this._syncDepth++ == 0) {
+            Arrays.fill(this._syncRead, false);
+        }
+    }
+
+    void endSync() {
+        if (this._serverEncoding) {
+            this._syncDepth--;
+        }
     }
 
     int getValue(int logicalIndex) {
@@ -41,7 +60,17 @@ final class PackedContainerData implements ContainerData {
         if (!this._serverEncoding) {
             return this._source.get(index);
         }
-        final int value = this._source.get(index / 2);
+        final int logicalIndex = index / 2;
+        final int value;
+        if (this._syncDepth == 0) {
+            value = this._source.get(logicalIndex);
+        } else {
+            if (!this._syncRead[logicalIndex]) {
+                this._syncValues[logicalIndex] = this._source.get(logicalIndex);
+                this._syncRead[logicalIndex] = true;
+            }
+            value = this._syncValues[logicalIndex];
+        }
         return (index & 1) == 0 ? value & 0xFFFF : value >>> 16;
     }
 

@@ -18,6 +18,7 @@ import it.zerono.mods.zerocore.lib.data.IoDirection;
 import it.zerono.mods.zerocore.lib.data.WideAmount;
 import it.zerono.mods.zerocore.lib.data.geometry.CuboidBoundingBox;
 import it.zerono.mods.zerocore.lib.data.nbt.ISyncableEntity;
+import it.zerono.mods.zerocore.lib.energy.EnergySystem;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
@@ -59,23 +60,6 @@ public class CompactTurbineController extends MultiblockTurbine implements IComp
      */
     private static final java.util.concurrent.atomic.AtomicBoolean _hasWarnedCoilMissing =
             new java.util.concurrent.atomic.AtomicBoolean(false);
-
-    /**
-     * 基类私有字段 {@code _boundingBox} 的反射引用（静态缓存，避免每次
-     * recalculateCoords() 都执行 getDeclaredField）。ZeroCore 升级若改名会在此
-     * 抛异常并中止 mod 加载（fail-fast），比运行时静默失败更易发现。
-     */
-    private static final java.lang.reflect.Field BOUNDING_BOX_FIELD;
-
-    static {
-        try {
-            BOUNDING_BOX_FIELD = it.zerono.mods.zerocore.lib.multiblock.AbstractMultiblockController.class
-                    .getDeclaredField("_boundingBox");
-            BOUNDING_BOX_FIELD.setAccessible(true);
-        } catch (NoSuchFieldException e) {
-            throw new IllegalStateException("无法找到 AbstractMultiblockController._boundingBox 字段（ZeroCore 升级？）", e);
-        }
-    }
 
     private final BlockPos _anchor;
     private final int _sizeX;
@@ -140,11 +124,7 @@ public class CompactTurbineController extends MultiblockTurbine implements IComp
     /** 覆写重算坐标：反射写入私有 {@code _boundingBox} 字段为 anchor 单方块。 */
     @Override
     public void recalculateCoords() {
-        try {
-            BOUNDING_BOX_FIELD.set(this, new CuboidBoundingBox(this._anchor, this._anchor));
-        } catch (ReflectiveOperationException e) {
-            CompactExtremeReactor.LOGGER.error("无法设置涡轮机 _boundingBox @{}", this._anchor, e);
-        }
+        CompactControllerBounds.setAnchor(this, this._anchor);
     }
 
     /** 每个服务端游戏刻驱动一次涡轮机逻辑。 */
@@ -157,11 +137,14 @@ public class CompactTurbineController extends MultiblockTurbine implements IComp
         // 冷凝丢失补偿需要在 ER 模拟前后夹读容器，见 compensateCondensationLoss
         final FluidContainer container = (FluidContainer) this.getFluidContainer();
         final int steamBefore = container.getGasAmount();
+        if (steamBefore <= 0 || this.getVentSetting() == VentSetting.VentAll) {
+            this.updateMultiblockEntity();
+            return;
+        }
         final int waterBefore = container.getLiquidAmount();
         // 冷凝映射必须在模拟前捕获：bug 触发后蒸汽槽已空，无法再从容器解析蒸汽类型
-        final IMapping<Vapor, Coolant> condensation = container.getVapor()
-                .flatMap(TransitionsRegistry::get)
-                .orElse(null);
+        final IMapping<Vapor, Coolant> condensation = container.mapVapor(
+                vapor -> TransitionsRegistry.get(vapor).orElse(null), null);
 
         this.updateMultiblockEntity();
 
@@ -205,7 +188,9 @@ public class CompactTurbineController extends MultiblockTurbine implements IComp
      */
     @Override
     public void syncDataFrom(CompoundTag tag, ISyncableEntity.SyncReason reason) {
-        super.syncDataFrom(tag, reason);
+        super.syncDataFrom(GeneratorEnergyPersistence.withCapacity(tag,
+                this.getEnergyBuffer().getCapacity(EnergySystem.REFERENCE),
+                amount -> amount.serializeTo(new CompoundTag())), reason);
         this.getEnergyBuffer().setMaxInsert(WideAmount.MAX_VALUE);
         this.setInductorEngaged(true);
     }

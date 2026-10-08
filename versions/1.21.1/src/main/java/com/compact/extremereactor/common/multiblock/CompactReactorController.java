@@ -1,6 +1,5 @@
 package com.compact.extremereactor.common.multiblock;
 
-import com.compact.extremereactor.CompactExtremeReactor;
 import com.compact.extremereactor.common.capability.BypassFluidHandler;
 import it.zerono.mods.extremereactors.api.reactor.IHeatEntity;
 import it.zerono.mods.extremereactors.api.reactor.Reactant;
@@ -54,7 +53,7 @@ import java.util.function.Function;
  *    它会驱动 ReactorLogic.update() 完成整个反应堆模拟。
  *
  * 注意：updateMultiblockEntity() 在数据变化时会以内部 bounding box 标记区块
- * 需要保存；单方块模拟下该框为空（0,0,0），此标记无害——TileEntity 自身会
+ * 需要保存；装配时将内部边界框限定为压缩方块自身，TileEntity 也会
  * 通过 setChanged() 保证保存。
  */
 public class CompactReactorController extends MultiblockReactor implements ICompactController {
@@ -71,23 +70,6 @@ public class CompactReactorController extends MultiblockReactor implements IComp
      * 写时只用新 key。玩家升级 mod 后旧存档可平滑迁移，无需 NBT 编辑。
      */
     private static final String LEGACY_NBT_KEY_CONTROL_ROD_RATIO = "ControlRodInsertionRatio";
-
-    /**
-     * 基类私有字段 {@code _boundingBox} 的反射引用（静态缓存，避免每次
-     * recalculateCoords() 都执行 getDeclaredField）。ZeroCore 升级若改名会在此
-     * 抛异常并中止 mod 加载（fail-fast），比运行时静默失败更易发现。
-     */
-    private static final java.lang.reflect.Field BOUNDING_BOX_FIELD;
-
-    static {
-        try {
-            BOUNDING_BOX_FIELD = it.zerono.mods.zerocore.lib.multiblock.AbstractMultiblockController.class
-                    .getDeclaredField("_boundingBox");
-            BOUNDING_BOX_FIELD.setAccessible(true);
-        } catch (NoSuchFieldException e) {
-            throw new IllegalStateException("无法找到 AbstractMultiblockController._boundingBox 字段（ZeroCore 升级？）", e);
-        }
-    }
 
     /** ReactorLogic 被动分支常量（被动冷却的传热/输出效率）。 */
     private static final double PASSIVE_COOLING_TRANSFER_EFFICIENCY = 0.2d;
@@ -223,11 +205,7 @@ public class CompactReactorController extends MultiblockReactor implements IComp
      */
     @Override
     public void recalculateCoords() {
-        try {
-            BOUNDING_BOX_FIELD.set(this, new CuboidBoundingBox(this._anchor, this._anchor));
-        } catch (ReflectiveOperationException e) {
-            CompactExtremeReactor.LOGGER.error("无法设置反应堆 _boundingBox @{}", this._anchor, e);
-        }
+        CompactControllerBounds.setAnchor(this, this._anchor);
     }
 
     /** 每个服务端游戏刻驱动一次反应堆逻辑。 */
@@ -332,7 +310,8 @@ public class CompactReactorController extends MultiblockReactor implements IComp
 
     @Override
     public void syncDataFrom(CompoundTag tag, HolderLookup.Provider registries, ISyncableEntity.SyncReason reason) {
-        super.syncDataFrom(tag, registries, reason);
+        super.syncDataFrom(GeneratorEnergyPersistence.withCapacity(tag,
+                this.getEnergyBuffer().getCapacity(EnergySystem.REFERENCE), WideAmount::serializeToNBT), registries, reason);
         // 优先读新 key（cer: 前缀），兼容旧 beta16 之前的无前缀存档
         // 防御：恶意 NBT 可能写入 -50（byte 范围 -128~127），必须 clamp 到 [0, 100]
         // 否则 controlRodFactor = (100-(-50))/100 = 1.5，反应堆产生 1.5x 能量，破坏平衡

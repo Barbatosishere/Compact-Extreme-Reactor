@@ -34,11 +34,15 @@ public class CompactEnergySink extends CompactEnergyStorage {
         if (delegate == null) {
             return 0;
         }
-        final OperationMode mode = simulate ? OperationMode.Simulate : OperationMode.Execute;
-        final long inserted = delegate
-                .insertEnergy(EnergySystem.ForgeEnergy, WideAmount.from(maxReceive), mode)
-                .longValue();
-        return inserted > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) inserted;
+        final int accepted = Math.min(maxReceive, clampToInt(delegate
+                .insertEnergy(EnergySystem.ForgeEnergy, WideAmount.from(maxReceive), OperationMode.Simulate)
+                .longValue()));
+        if (simulate || accepted == 0) {
+            return accepted;
+        }
+        return clampToInt(delegate
+                .insertEnergy(EnergySystem.ForgeEnergy, WideAmount.from(accepted), OperationMode.Execute)
+                .longValue());
     }
 
     @Override

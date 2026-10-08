@@ -23,6 +23,7 @@ import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.common.util.LazyOptional;
 import net.minecraftforge.energy.IEnergyStorage;
 import net.minecraftforge.event.TickEvent;
+import net.minecraftforge.event.server.ServerStoppedEvent;
 import net.minecraftforge.fluids.capability.IFluidHandler;
 import org.jetbrains.annotations.Nullable;
 
@@ -57,6 +58,9 @@ public abstract class AbstractCompactMachineTileEntity extends BlockEntity {
      * Minecraft 的 {@code Direction.values()} 实际返回 {@code $VALUES.clone()}——每次都新建数组。
      */
     private static final Direction[] DIRS = Direction.values();
+
+    @Nullable
+    private BlockPos[] _powerNeighborPositions;
 
     /** 所有已加载的压缩机器实例（服务端），由 ServerTickEvent 驱动 tick。
      * 用 {@link ConcurrentHashMap#newKeySet()} 实现：当前所有写入都在服务端主线程，
@@ -305,6 +309,12 @@ public abstract class AbstractCompactMachineTileEntity extends BlockEntity {
     /** 注册 ServerTickEvent 处理器（由主类在 mod 构造时调用一次）。 */
     public static void registerServerTickHandler() {
         MinecraftForge.EVENT_BUS.addListener(AbstractCompactMachineTileEntity::handleServerTick);
+        MinecraftForge.EVENT_BUS.addListener((ServerStoppedEvent event) -> clearRuntimeSets());
+    }
+
+    private static void clearRuntimeSets() {
+        TICKING_MACHINES.clear();
+        PENDING_INIT.clear();
     }
 
     /** 每个服务端游戏刻遍历所有已加载机器，驱动 serverTick()。 */
@@ -317,11 +327,15 @@ public abstract class AbstractCompactMachineTileEntity extends BlockEntity {
             final var pendingIt = PENDING_INIT.iterator();
             while (pendingIt.hasNext()) {
                 final AbstractCompactMachineTileEntity be = pendingIt.next();
-                pendingIt.remove();
                 final net.minecraft.world.level.Level level = be.level;
                 if (be.isRemoved() || level == null || level.isClientSide) {
+                    pendingIt.remove();
                     continue;
                 }
+                if (!level.shouldTickBlocksAt(be.worldPosition)) {
+                    continue;
+                }
+                pendingIt.remove();
                 try {
                     be.initController();
                 } catch (Throwable t) {
@@ -341,10 +355,11 @@ public abstract class AbstractCompactMachineTileEntity extends BlockEntity {
         while (it.hasNext()) {
             final AbstractCompactMachineTileEntity be = it.next();
             final net.minecraft.world.level.Level level = be.level;
-            // 清理已失效/已卸载的机器：isRemoved、level 为空、客户端、区块已卸载
-            if (be.isRemoved() || level == null || level.isClientSide
-                    || !level.isLoaded(be.worldPosition)) {
+            if (be.isRemoved() || level == null || level.isClientSide) {
                 it.remove();
+                continue;
+            }
+            if (!level.isLoaded(be.worldPosition) || !level.shouldTickBlocksAt(be.worldPosition)) {
                 continue;
             }
             // 单机器 tick 异常隔离：单台机器崩溃（ER 内部 NPE/IOOB）不应导致
@@ -447,8 +462,14 @@ public abstract class AbstractCompactMachineTileEntity extends BlockEntity {
                 POWER_TRANSFER_AMOUNT, OperationMode.Simulate).isZero()) {
             return;
         }
+        if (this._powerNeighborPositions == null) {
+            this._powerNeighborPositions = new BlockPos[DIRS.length];
+            for (Direction dir : DIRS) {
+                this._powerNeighborPositions[dir.ordinal()] = this.worldPosition.relative(dir);
+            }
+        }
         for (Direction dir : DIRS) {
-            final BlockPos neighborPos = this.worldPosition.relative(dir);
+            final BlockPos neighborPos = this._powerNeighborPositions[dir.ordinal()];
             if (!this.level.isLoaded(neighborPos)) {
                 continue;
             }
@@ -468,7 +489,8 @@ public abstract class AbstractCompactMachineTileEntity extends BlockEntity {
                 continue;
             }
             // 推送到相邻方块并真实扣除
-            final int accepted = neighbor.receiveEnergy((int) Math.min(available, Integer.MAX_VALUE), false);
+            final int offered = (int) Math.min(available, Integer.MAX_VALUE);
+            final int accepted = Math.min(offered, Math.max(0, neighbor.receiveEnergy(offered, false)));
             if (accepted > 0) {
                 controller.extractEnergy(EnergySystem.ForgeEnergy,
                         WideAmount.from(accepted), OperationMode.Execute);

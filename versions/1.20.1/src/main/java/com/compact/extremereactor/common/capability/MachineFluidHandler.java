@@ -28,45 +28,66 @@ public class MachineFluidHandler implements IFluidHandler {
 
     @Override
     public @NotNull FluidStack getFluidInTank(int tank) {
-        final IFluidHandler handler = this.handlerFor(tank);
-        return handler == null ? FluidStack.EMPTY : handler.getFluidInTank(this.localIndex(tank));
+        if (tank < 0) {
+            return FluidStack.EMPTY;
+        }
+        final int inputTanks = this._input.getTanks();
+        final IFluidHandler handler = this.handlerFor(tank, inputTanks);
+        return handler == null ? FluidStack.EMPTY : handler.getFluidInTank(this.localIndex(tank, inputTanks));
     }
 
     @Override
     public int getTankCapacity(int tank) {
-        final IFluidHandler handler = this.handlerFor(tank);
-        return handler == null ? 0 : handler.getTankCapacity(this.localIndex(tank));
+        if (tank < 0) {
+            return 0;
+        }
+        final int inputTanks = this._input.getTanks();
+        final IFluidHandler handler = this.handlerFor(tank, inputTanks);
+        return handler == null ? 0 : handler.getTankCapacity(this.localIndex(tank, inputTanks));
     }
 
     @Override
     public boolean isFluidValid(int tank, @NotNull FluidStack stack) {
-        final IFluidHandler handler = this.handlerFor(tank);
-        return handler != null && handler.isFluidValid(this.localIndex(tank), stack);
+        if (tank < 0 || stack.isEmpty()) {
+            return false;
+        }
+        final int inputTanks = this._input.getTanks();
+        final IFluidHandler handler = this.handlerFor(tank, inputTanks);
+        return handler != null && handler.isFluidValid(this.localIndex(tank, inputTanks), stack);
     }
 
     @Override
     public int fill(FluidStack resource, FluidAction action) {
+        if (resource.isEmpty()) {
+            return 0;
+        }
         return this._input.fill(resource, action);
     }
 
     @Override
     public @NotNull FluidStack drain(FluidStack resource, FluidAction action) {
+        if (resource.isEmpty()) {
+            return FluidStack.EMPTY;
+        }
         return this._output.drain(resource, action);
     }
 
     @Override
     public @NotNull FluidStack drain(int maxDrain, FluidAction action) {
+        if (maxDrain <= 0) {
+            return FluidStack.EMPTY;
+        }
         return this._output.drain(maxDrain, action);
     }
 
-    private @Nullable IFluidHandler handlerFor(int tank) {
-        if (tank < 0 || tank >= this.getTanks()) {
-            return null;
+    private @Nullable IFluidHandler handlerFor(int tank, int inputTanks) {
+        if (tank < inputTanks) {
+            return this._input;
         }
-        return tank < this._input.getTanks() ? this._input : this._output;
+        return tank - inputTanks < this._output.getTanks() ? this._output : null;
     }
 
-    private int localIndex(int tank) {
-        return tank < this._input.getTanks() ? tank : tank - this._input.getTanks();
+    private int localIndex(int tank, int inputTanks) {
+        return tank < inputTanks ? tank : tank - inputTanks;
     }
 }

@@ -84,6 +84,12 @@ Artifacts are at `versions/<mc>/build/libs/compactextremereactor-<version>-<Load
 ## ⚠️ Known limitations
 
 - Forge 1.20.1 dev runs (`runServer`/`runClient`) fail because the bundled ZeroCore/ER2 dependency jars are production (SRG-mapped) builds; production installs are unaffected.
+- Compact reactor radiation uses one upward ray to avoid multiplying simulated heat across six directions. It does not reproduce a real fuel-rod layout or its directional control-rod heat response.
+- Reactor and turbine simulation depends on ZeroCore's internal bounding-box field. Compatibility is checked when a machine is assembled; an incompatible API disables that machine through the initialization error handler and records the cause.
+
+Fluid capabilities combine input and output tank views. Tank indices describe contents and validity; the `IFluidHandler.fill/drain` methods do not take a tank index. Filling routes to inputs and draining routes to outputs. A reactor fluid registered as both fuel and coolant is routed as fuel; avoid overlapping mappings when automation must distinguish the two. Untyped reactor draining extracts steam only; extracting waste requires a fluid-specific request.
+
+A turbine with a full FE buffer pauses steam intake, condensation and generation together; after energy extraction it resumes automatically. It does not consume steam while paused, so there is no condensation to replay. Fluidizers select fluid mixing when both input tanks are occupied, then solid mixing or solid processing; dedicate machines to one input mode when automating both kinds of ingredients.
 
 ## ⚙️ Config (`config/compactextremereactor-common.toml`)
 
@@ -96,6 +102,15 @@ Artifacts are at `versions/<mc>/build/libs/compactextremereactor-<version>-<Load
 | `turbine.coilRadius` | 3 | Turbine coil radius (1–16) |
 | `turbine.sizeX/Z` | 9 | Simulated turbine size |
 | `turbine.sizeY` | 11 | Turbine shaft height (blades = layers × 4) |
+| `fluidizer.sizeX/Y/Z` | 9 | Simulated fluidizer size (3–32; output capacity = interior volume × 4,000 mB) |
+
+Restart the server after changing fluidizer dimensions. Existing machines use the new output capacity when loaded. Shrinking preserves stored fluid; production pauses until enough space is available for a complete recipe result.
+
+Reactor and turbine dimension changes also require a server restart. Their energy buffers use the new capacity when loaded and retain all stored FE after shrinking. Generation pauses while the buffer is full; stored energy remains available for extraction.
+
+The fluidizer keeps its fixed 50,000 FE capacity and 1,000 FE transfer limit when loading saved data. Existing energy above capacity is retained and can be consumed by recipes; further energy input waits until storage drops below capacity.
+
+Saved inventory sizes cannot change the fluidizer's two item slots or two input tanks. Loading preserves ingredients in valid slots and ignores entries with missing, nonnumeric, fractional or out-of-range slot IDs.
 
 ## 📁 Project layout
 
@@ -105,6 +120,8 @@ stonecutter.gradle.kts          # active version switch
 libs/                           # local ER / ZeroCore dependencies
 tools/
 └── soak-test.sh               # RCON-based soak regression test
+src/main/java/com/compact/extremereactor/  # Java sources shared by both versions
+└── common/menu/                # Reactor, turbine and fluidizer menus / packed sync
 versions/<mc>/                 # per-version sources (1.20.1, 1.21.1)
 ├── gradle.properties          # loader / dependency versions for this MC
 └── src/main/
@@ -112,7 +129,7 @@ versions/<mc>/                 # per-version sources (1.20.1, 1.21.1)
     │   ├── CompactExtremeReactor.java  # Mod entry point
     │   ├── client/             # Screens and client registration
     │   └── common/             # Blocks, capabilities, config, integration,
-    │                           # menus, controllers, network, block entities
+    │                           # controllers, network, block entities
     ├── resources/
     │   ├── assets/             # Models, textures, languages, blockstates
     │   └── data/               # Loot tables and recipes

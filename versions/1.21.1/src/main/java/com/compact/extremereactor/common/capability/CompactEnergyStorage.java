@@ -54,6 +54,10 @@ public class CompactEnergyStorage implements IEnergyStorage {
         return this.delegate();
     }
 
+    protected static int clampToInt(long amount) {
+        return amount <= 0 ? 0 : amount > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) amount;
+    }
+
     @Override
     public int receiveEnergy(int maxReceive, boolean simulate) {
         // 发电机不接受能量输入
@@ -69,12 +73,15 @@ public class CompactEnergyStorage implements IEnergyStorage {
         if (delegate == null) {
             return 0;
         }
-        final OperationMode mode = simulate ? OperationMode.Simulate : OperationMode.Execute;
-        final long extracted = delegate
-                .extractEnergy(EnergySystem.ForgeEnergy, WideAmount.from(maxExtract), mode)
-                .longValue();
-        // 防止 long 超出 int 范围时截断
-        return extracted > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) extracted;
+        final int available = Math.min(maxExtract, clampToInt(delegate
+                .extractEnergy(EnergySystem.ForgeEnergy, WideAmount.from(maxExtract), OperationMode.Simulate)
+                .longValue()));
+        if (simulate || available == 0) {
+            return available;
+        }
+        return clampToInt(delegate
+                .extractEnergy(EnergySystem.ForgeEnergy, WideAmount.from(available), OperationMode.Execute)
+                .longValue());
     }
 
     @Override
@@ -84,7 +91,7 @@ public class CompactEnergyStorage implements IEnergyStorage {
             return 0;
         }
         final long energy = delegate.getEnergyStored(EnergySystem.ForgeEnergy).longValue();
-        return energy > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) energy;
+        return clampToInt(energy);
     }
 
     @Override
@@ -94,7 +101,7 @@ public class CompactEnergyStorage implements IEnergyStorage {
             return 0;
         }
         final long capacity = delegate.getCapacity(EnergySystem.ForgeEnergy).longValue();
-        return capacity > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) capacity;
+        return clampToInt(capacity);
     }
 
     @Override

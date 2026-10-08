@@ -45,18 +45,27 @@ public final class DeferredFluidHandler implements IFluidHandler {
 
     @Override
     public @NotNull FluidStack getFluidInTank(int tank) {
+        if (tank < 0) {
+            return FluidStack.EMPTY;
+        }
         final IFluidHandler delegate = this.delegate();
         return delegate == null ? FluidStack.EMPTY : delegate.getFluidInTank(tank);
     }
 
     @Override
     public int getTankCapacity(int tank) {
+        if (tank < 0) {
+            return 0;
+        }
         final IFluidHandler delegate = this.delegate();
         return delegate == null ? 0 : delegate.getTankCapacity(tank);
     }
 
     @Override
     public boolean isFluidValid(int tank, @NotNull FluidStack stack) {
+        if (tank < 0 || stack.isEmpty()) {
+            return false;
+        }
         final IFluidHandler delegate = this.delegate();
         return delegate == null
                 ? !this._released && tank >= 0 && tank < this._pendingTanks
@@ -66,18 +75,27 @@ public final class DeferredFluidHandler implements IFluidHandler {
 
     @Override
     public int fill(FluidStack resource, FluidAction action) {
+        if (resource.isEmpty()) {
+            return 0;
+        }
         final IFluidHandler delegate = this.delegate();
         return delegate == null ? 0 : delegate.fill(resource, action);
     }
 
     @Override
     public @NotNull FluidStack drain(FluidStack resource, FluidAction action) {
+        if (resource.isEmpty()) {
+            return FluidStack.EMPTY;
+        }
         final IFluidHandler delegate = this.delegate();
         return delegate == null ? FluidStack.EMPTY : delegate.drain(resource, action);
     }
 
     @Override
     public @NotNull FluidStack drain(int maxDrain, FluidAction action) {
+        if (maxDrain <= 0) {
+            return FluidStack.EMPTY;
+        }
         final IFluidHandler delegate = this.delegate();
         return delegate == null ? FluidStack.EMPTY : delegate.drain(maxDrain, action);
     }

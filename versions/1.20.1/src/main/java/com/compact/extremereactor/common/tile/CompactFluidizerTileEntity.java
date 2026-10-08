@@ -25,7 +25,7 @@ import org.jetbrains.annotations.Nullable;
  *   - 固体进料（2 槽）/ 流体进料（2 罐）经物品 / 流体能力输入；
  *   - 产物流体经流体能力输出（容量 = 内部体积 × 4000 mB）；
  *   - 能量通过能量能力<b>输入</b>（消费型机器，与反应堆/涡轮机相反）；
- *   - 不推送能量：{@code pushPower} 因控制器 {@code extractEnergy} 恒为 0 而自然跳过。
+ *   - 不推送能量：仅驱动配方 tick，状态变更由控制器回调标记存档。
  */
 public class CompactFluidizerTileEntity extends AbstractCompactMachineTileEntity {
 
@@ -49,6 +49,18 @@ public class CompactFluidizerTileEntity extends AbstractCompactMachineTileEntity
         // （流化器无原料/无能量时配方处理自然暂停，默认开启对玩家最省事）。
         if (!this.hasPendingControllerTag()) {
             controller.setMachineActive(true);
+        }
+    }
+
+    @Override
+    public void serverTick() {
+        if (!this.canExposeRuntimeCapabilities()) {
+            return;
+        }
+        final ICompactController controller = this._controller;
+        if (controller != null) {
+            controller.tick();
+            this.setChanged();
         }
     }
 

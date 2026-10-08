@@ -69,7 +69,7 @@ public class CompactReactorTileEntity extends AbstractCompactMachineTileEntity {
 
     @Override
     protected int getPendingFluidTankCount() {
-        return 3;
+        return 4;
     }
 
     @Override
