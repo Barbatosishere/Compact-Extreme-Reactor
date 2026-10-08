@@ -18,7 +18,6 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
 import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.function.Supplier;
 
 /**
  * 自定义网络数据包：客户端 → 服务端的机器控制指令。
