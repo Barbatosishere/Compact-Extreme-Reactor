@@ -4,20 +4,14 @@ import com.compact.extremereactor.common.menu.CompactReactorMenu;
 import com.compact.extremereactor.common.network.ModPackets;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
-import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.player.Inventory;
 import net.neoforged.neoforge.network.PacketDistributor;
 
-/**
- * 压缩极限反应堆 GUI：显示能量/燃料/废料/控制棒状态，并提供控制棒调节、
- * 机器开关与清除废料按钮。
- *
- * 玩家操作通过 {@link ModPackets} 的 C2S 数据包发送到服务端。
- */
-public class CompactReactorScreen extends AbstractContainerScreen<CompactReactorMenu> {
+/** 反应堆状态显示及控制棒、开关、排废操作。 */
+public class CompactReactorScreen extends CompactMachineScreen<CompactReactorMenu> {
 
     private static final ResourceLocation TEXTURE = ResourceLocation.fromNamespaceAndPath("compactextremereactor", "textures/gui/compact_reactor.png");
 
@@ -35,8 +29,6 @@ public class CompactReactorScreen extends AbstractContainerScreen<CompactReactor
 
     public CompactReactorScreen(CompactReactorMenu menu, Inventory playerInventory, Component title) {
         super(menu, playerInventory, title);
-        this.imageWidth = 320;
-        this.imageHeight = 180;
     }
 
     @Override
@@ -137,10 +129,6 @@ public class CompactReactorScreen extends AbstractContainerScreen<CompactReactor
         PacketDistributor.sendToServer(new ModPackets.MachineActionPayload(pos, action));
     }
 
-    // ------------------------------------------------------------------
-    // 绘制
-    // ------------------------------------------------------------------
-
     @Override
     protected void renderBg(GuiGraphics guiGraphics, float partialTick, int mouseX, int mouseY) {
         guiGraphics.blit(
@@ -150,25 +138,6 @@ public class CompactReactorScreen extends AbstractContainerScreen<CompactReactor
         this.renderVerticalBar(guiGraphics, this.leftPos + 300, this.topPos + 14, 10, 138, this.menu.getData(CompactReactorMenu.DATA_ENERGY), this.menu.getData(CompactReactorMenu.DATA_ENERGY_CAPACITY), 0xFFE7B95B);
     }
 
-    private void renderVerticalBar(GuiGraphics g, int x, int y, int width, int height, int value, int capacity, int color) {
-        g.fill(x, y, x + width, y + height, 0xFF52616C);
-        g.fill(x + 1, y + 1, x + width - 1, y + height - 1, 0xFF0D151D);
-        if (capacity > 0 && value > 0) {
-            int filled = Math.min(height - 2, (int) ((long) (height - 2) * value / capacity));
-            g.fill(x + 1, y + height - 1 - filled, x + width - 1, y + height - 1, color);
-        }
-        g.fill(x + 1, y + 1, x + width - 1, y + 2, 0x66FFFFFF);
-    }
-
-    private void renderHorizontalBar(GuiGraphics g, int x, int y, int width, int height, int value, int capacity, int color) {
-        g.fill(x, y, x + width, y + height, 0xFF52616C);
-        g.fill(x + 1, y + 1, x + width - 1, y + height - 1, 0xFF0D151D);
-        if (capacity > 0 && value > 0) {
-            int filled = Math.min(width - 2, (int) ((long) (width - 2) * value / capacity));
-            g.fill(x + 1, y + 1, x + 1 + filled, y + height - 1, color);
-        }
-        g.fill(x + 1, y + 1, x + width - 1, y + 2, 0x66FFFFFF);
-    }
     @Override
     protected void renderLabels(GuiGraphics guiGraphics, int mouseX, int mouseY) {
         if (this.menu.getData(CompactReactorMenu.DATA_INIT_FAILED) == 1) {
@@ -194,7 +163,10 @@ public class CompactReactorScreen extends AbstractContainerScreen<CompactReactor
         boolean active = this.menu.getData(CompactReactorMenu.DATA_ACTIVE) == 1;
         final String statusKey;
         final int statusColor;
-        if (energyFull) {
+        if (!this.menu.isStructureReady()) {
+            statusKey = "gui.compactextremereactor.structure_incomplete";
+            statusColor = 0xFFEEA687;
+        } else if (energyFull) {
             statusKey = "gui.compactextremereactor.status_energy_full";
             statusColor = 0xFFE7B95B;
         } else if (active) {
@@ -210,9 +182,5 @@ public class CompactReactorScreen extends AbstractContainerScreen<CompactReactor
         this.drawFit(guiGraphics, Component.translatable("gui.compactextremereactor.fuel", this.menu.getData(CompactReactorMenu.DATA_FUEL)), 14, 100, 272, 0xFFB4D85A);
         this.drawFit(guiGraphics, Component.translatable("gui.compactextremereactor.waste", this.menu.getData(CompactReactorMenu.DATA_WASTE)), 14, 128, 174, 0xFFAD9164);
         this.drawFit(guiGraphics, Component.translatable("gui.compactextremereactor.energy", this.menu.getData(CompactReactorMenu.DATA_ENERGY)), 14, 164, 272, 0xFFE7B95B);
-    }
-
-    private void drawFit(GuiGraphics guiGraphics, Component text, int x, int y, int maxWidth, int color) {
-        guiGraphics.drawString(this.font, this.font.plainSubstrByWidth(text.getString(), maxWidth), x, y, color);
     }
 }

@@ -15,7 +15,6 @@ import net.minecraftforge.common.capabilities.ICapabilityProvider;
 import net.minecraftforge.common.util.LazyOptional;
 import net.minecraftforge.event.AttachCapabilitiesEvent;
 import net.minecraftforge.eventbus.api.IEventBus;
-import net.minecraftforge.fml.ModContainer;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.config.ModConfig;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
@@ -24,14 +23,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.Nullable;
 
-/**
- * Compact Extreme Reactor 主类。
- *
- * 本模组将 Extreme Reactors 的大型多方块机器（反应堆 / 涡轮机）压缩为单个紧凑方块：
- * 压缩方块的 TileEntity 直接持有并驱动 ER 的多方块控制器（MultiblockReactor /
- * MultiblockTurbine 的子类），在内部模拟出等效的多方块部件数据（燃料棒数量、
- * 转子叶片、线圈等），从而复用 ER 完整的反应堆/涡轮机逻辑而不需要真实的多方块结构。
- */
+/** 注册压缩反应堆、涡轮机和流化器及其配置、网络与能力。 */
 @Mod(CompactExtremeReactor.MODID)
 public final class CompactExtremeReactor {
 
@@ -45,6 +37,9 @@ public final class CompactExtremeReactor {
 
         // 注册方块 / 物品 / 方块实体 / 创造模式标签 / 菜单类型
         Content.register(modEventBus);
+        modEventBus.addListener((net.minecraftforge.fml.event.config.ModConfigEvent.Reloading event) -> {
+            if (event.getConfig().getSpec() == CompactConfig.SPEC) ++CompactConfig.structureRevision;
+        });
 
         // 注册自定义网络数据包（GUI → 服务端指令）
         modEventBus.addListener(ModPackets::onCommonSetup);

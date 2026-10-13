@@ -11,15 +11,7 @@ import net.minecraftforge.fluids.capability.IFluidHandler;
 
 import java.util.Optional;
 
-/**
- * 压缩机器模拟控制器的统一访问接口。
- *
- * 由 {@link CompactReactorController} 与 {@link CompactTurbineController} 实现，
- * 屏蔽两类控制器（反应堆/涡轮机）的差异，让 TileEntity 以一致的方式：
- *   - 驱动模拟（simulateAssembly / tick）
- *   - 读写 NBT（syncDataFrom / syncDataTo，与 ER 存档格式一致）
- *   - 暴露能量（继承 IWideEnergyStorage2）与流体（getFluidHandler）
- */
+/** 三类压缩机器的模拟、存档、能量和流体接口。 */
 public interface ICompactController extends IWideEnergyStorage2 {
 
     /** 模拟多方块"装配"：初始化能量/流体/燃料容量。 */
@@ -28,17 +20,15 @@ public interface ICompactController extends IWideEnergyStorage2 {
     /** 驱动一游戏刻的机器逻辑。 */
     void tick();
 
+    void setStructureReady(java.util.function.BooleanSupplier ready);
+
     /** 设置机器激活状态（是否运行）。 */
     void setMachineActive(boolean active);
 
     /** 机器当前是否处于激活（运行）状态。 */
     boolean isMachineActive();
 
-    /**
-     * 内部 FE 缓存已满。满仓时跳过产能模拟（不耗燃料、不进汽、不产热），
-     * 抽出能量腾出空位后自动恢复。不改 {@link #isMachineActive()}：
-     * 涡轮机没有 GUI 开关，玩家开关状态必须保留。
-     */
+    /** 满仓暂停产能，不改变玩家开关状态；抽出能量后自动恢复。 */
     default boolean isEnergyBufferFull() {
         final WideAmount capacity = this.getCapacity(EnergySystem.ForgeEnergy);
         if (capacity.isZero()) {
@@ -94,11 +84,7 @@ public interface ICompactController extends IWideEnergyStorage2 {
         return 0;
     }
 
-    /**
-     * 注册流体脏标记回调：BypassFluidHandler 每次 fill/drain Execute 成功后调用，
-     * 用于及时触发 TileEntity {@code setChanged()}（流体变更尽快落盘，而不是等
-     * serverTick 的 1 秒兜底保存）。默认无操作。
-     */
+    /** 注册能力变更后的即时保存回调；无需回调的控制器可保持默认实现。 */
     default void setFluidDirtyCallback(Runnable callback) {
     }
 

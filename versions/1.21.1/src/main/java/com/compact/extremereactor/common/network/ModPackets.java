@@ -1,6 +1,9 @@
 package com.compact.extremereactor.common.network;
 
 import com.compact.extremereactor.CompactExtremeReactor;
+import com.compact.extremereactor.common.multiblock.CompactFluidizerController;
+import com.compact.extremereactor.common.tile.CompactFluidizerTileEntity;
+import com.compact.extremereactor.common.menu.CompactFluidizerMenu;
 import com.compact.extremereactor.common.menu.CompactReactorMenu;
 import com.compact.extremereactor.common.multiblock.CompactReactorController;
 import com.compact.extremereactor.common.multiblock.ICompactController;
@@ -17,15 +20,11 @@ import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 
-import java.util.concurrent.atomic.AtomicLong;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
 
-/**
- * 自定义网络数据包：客户端 → 服务端的机器控制指令。
- *
- * 单方块模拟的 GUI 需要把玩家的操作（控制棒调节、开关、清除废料）发送到
- * 服务端，由服务端 TileEntity 应用到 ER 控制器上。这里使用 NeoForge 1.21
- * 的标准 payload 机制。
- */
+/** 客户端机器控制包；服务端校验菜单、目标、距离和频率后执行。 */
 public final class ModPackets {
 
     private ModPackets() {
@@ -37,49 +36,33 @@ public final class ModPackets {
     /** 流化器：清空全部进料（物品槽 + 流体罐）。 */
     public static final int ACTION_CLEAR_INPUTS = 2;
 
-    // ------------------------------------------------------------------
-    // 包频率限速（DoS 防御）
-    // ------------------------------------------------------------------
-
-    /**
-     * 每玩家每服务端 tick 最多处理 1 个控制棒包——超过则丢弃。
-     * 防止恶意客户端用 auto-clicker 工具高频点击制造服务端资源压力。
-     * 底层 ConcurrentHashMap：当前仅在服务端主线程读写（putIfAbsent 原子更新），
-     * 使用 putIfAbsent/replace 原子更新，避免并发路径下检查与写入之间出现竞态。
-     */
-    private static final java.util.concurrent.ConcurrentMap<java.util.UUID, Long> _lastControlRodTick =
-            new java.util.concurrent.ConcurrentHashMap<>();
-    private static final java.util.concurrent.ConcurrentMap<java.util.UUID, Long> _lastToggleTick =
-            new java.util.concurrent.ConcurrentHashMap<>();
-    private static final java.util.concurrent.ConcurrentMap<java.util.UUID, Long> _lastVoidWasteTick =
-            new java.util.concurrent.ConcurrentHashMap<>();
-    private static final java.util.concurrent.ConcurrentMap<java.util.UUID, Long> _lastClearInputsTick =
-            new java.util.concurrent.ConcurrentHashMap<>();
+    // 包处理及玩家清理均在服务端主线程执行。
+    private static final Map<UUID, Long> _lastControlRodTick =
+            new HashMap<>();
+    private static final Map<UUID, Long> _lastToggleTick =
+            new HashMap<>();
+    private static final Map<UUID, Long> _lastVoidWasteTick =
+            new HashMap<>();
+    private static final Map<UUID, Long> _lastClearInputsTick =
+            new HashMap<>();
     private static final int ROD_PACKET_INTERVAL_TICKS = 1;
     private static final int ACTION_PACKET_INTERVAL_TICKS = 5;
     private static final long PLAYER_PURGE_INTERVAL_TICKS = 200L;
-    private static final AtomicLong _lastPlayerPurgeTick = new AtomicLong(-1L);
+    private static long _lastPlayerPurgeTick = -1L;
 
     private static boolean tryAcquirePacketSlot(
-            java.util.concurrent.ConcurrentMap<java.util.UUID, Long> lastTicks,
+            Map<UUID, Long> lastTicks,
             ServerPlayer player,
             int intervalTicks) {
         final long nowTick = Integer.toUnsignedLong(player.server.getTickCount());
-        final java.util.UUID playerId = player.getUUID();
+        final UUID playerId = player.getUUID();
         maybePurgeStalePlayers(player, nowTick);
-        while (true) {
-            final Long lastTick = lastTicks.get(playerId);
-            if (lastTick != null && elapsedTicks(nowTick, lastTick) < intervalTicks) {
-                return false;
-            }
-            if (lastTick == null) {
-                if (lastTicks.putIfAbsent(playerId, nowTick) == null) {
-                    return true;
-                }
-            } else if (lastTicks.replace(playerId, lastTick, nowTick)) {
-                return true;
-            }
+        final Long lastTick = lastTicks.get(playerId);
+        if (lastTick != null && elapsedTicks(nowTick, lastTick) < intervalTicks) {
+            return false;
         }
+        lastTicks.put(playerId, nowTick);
+        return true;
     }
 
     private static void maybePurgeStalePlayers(ServerPlayer player, long nowTick) {
@@ -87,13 +70,11 @@ public final class ModPackets {
                 && _lastVoidWasteTick.size() <= 256 && _lastClearInputsTick.size() <= 256) {
             return;
         }
-        final long previous = _lastPlayerPurgeTick.get();
+        final long previous = _lastPlayerPurgeTick;
         if (previous != -1L && elapsedTicks(nowTick, previous) < PLAYER_PURGE_INTERVAL_TICKS) {
             return;
         }
-        if (!_lastPlayerPurgeTick.compareAndSet(previous, nowTick)) {
-            return;
-        }
+        _lastPlayerPurgeTick = nowTick;
         removeOfflinePlayers(_lastControlRodTick, player.server.getPlayerList());
         removeOfflinePlayers(_lastToggleTick, player.server.getPlayerList());
         removeOfflinePlayers(_lastVoidWasteTick, player.server.getPlayerList());
@@ -101,7 +82,7 @@ public final class ModPackets {
     }
 
     private static void removeOfflinePlayers(
-            java.util.concurrent.ConcurrentMap<java.util.UUID, Long> ticks,
+            Map<UUID, Long> ticks,
             net.minecraft.server.players.PlayerList players) {
         ticks.entrySet().removeIf(entry -> players.getPlayer(entry.getKey()) == null);
     }
@@ -121,21 +102,18 @@ public final class ModPackets {
         _lastToggleTick.clear();
         _lastVoidWasteTick.clear();
         _lastClearInputsTick.clear();
-        _lastPlayerPurgeTick.set(-1L);
+        _lastPlayerPurgeTick = -1L;
     }
 
     private static void handlePlayerLoggedOut(
             net.neoforged.neoforge.event.entity.player.PlayerEvent.PlayerLoggedOutEvent event) {
-        final java.util.UUID id = event.getEntity().getUUID();
+        final UUID id = event.getEntity().getUUID();
         _lastControlRodTick.remove(id);
         _lastToggleTick.remove(id);
         _lastVoidWasteTick.remove(id);
         _lastClearInputsTick.remove(id);
     }
 
-    // ------------------------------------------------------------------
-    // 数据包定义
-    // ------------------------------------------------------------------
 
     /** 相对调节反应堆控制棒插入比例（GUI 仅发送 -5/+5）。 */
     public record ControlRodPayload(BlockPos pos, int delta) implements CustomPacketPayload {
@@ -167,9 +145,6 @@ public final class ModPackets {
         }
     }
 
-    // ------------------------------------------------------------------
-    // 注册与处理
-    // ------------------------------------------------------------------
 
     /** 在 MOD 事件总线的 RegisterPayloadHandlersEvent 中注册所有数据包。 */
     public static void registerPayloads(RegisterPayloadHandlersEvent event) {
@@ -190,8 +165,7 @@ public final class ModPackets {
                 || menu.getData(CompactReactorMenu.DATA_POS_READY) != 1) {
             return;
         }
-        // DoS 防御：玩家不可能站在未加载区块——isLoaded 检查避免对未加载坐标触发
-        // 同步 chunk load（getBlockEntity 在未加载区块会同步生成，恶意包能冻结主线程）
+        // 先检查区块已加载，避免恶意坐标触发同步加载。
         if (!player.level().isLoaded(payload.pos())) {
             return;
         }
@@ -202,7 +176,7 @@ public final class ModPackets {
             return;
         }
         if (player.distanceToSqr(payload.pos().getCenter()) >= 64) {
-            // 远距离操作：审计日志（防止玩家用 mod 工具绕过距离限制）
+
             CompactExtremeReactor.LOGGER.warn("玩家 {} 尝试远程调节控制棒 @{}，距离={}，已忽略",
                     player.getName().getString(), payload.pos(),
                     String.format("%.1f", Math.sqrt(player.distanceToSqr(payload.pos().getCenter()))));
@@ -233,7 +207,7 @@ public final class ModPackets {
         if (!(ctx.player() instanceof ServerPlayer player)) {
             return;
         }
-        final java.util.concurrent.ConcurrentMap<java.util.UUID, Long> actionTicks;
+        final Map<UUID, Long> actionTicks;
         if (payload.action() == ACTION_TOGGLE_ACTIVE) {
             actionTicks = _lastToggleTick;
         } else if (payload.action() == ACTION_VOID_WASTE) {
@@ -247,28 +221,27 @@ public final class ModPackets {
         }
         if (!((player.containerMenu instanceof CompactReactorMenu reactorMenu
                 && reactorMenu.isForPosition(payload.pos()))
-                || (player.containerMenu instanceof com.compact.extremereactor.common.menu.CompactFluidizerMenu fluidizerMenu
+                || (player.containerMenu instanceof CompactFluidizerMenu fluidizerMenu
                 && fluidizerMenu.isForPosition(payload.pos())))) {
             return;
         }
-        // DoS 防御：见 handleControlRod 同名注释
+        // 避免为包中坐标同步加载区块。
         if (!player.level().isLoaded(payload.pos())) {
             return;
         }
         if (!(player.level().getBlockEntity(payload.pos()) instanceof AbstractCompactMachineTileEntity tile)) {
             return;
         }
-        // 菜单与方块类型必须匹配：反应堆 GUI 只能操作反应堆，流化器 GUI 只能操作流化器
-        // （防止用 A 机器的菜单会话操控 B 机器；涡轮机 GUI 无开关，toggle 包在下方统一拒绝）
+        // 菜单必须绑定当前机器实例，防止重放旧菜单会话。
         final boolean menuMatches;
         if (player.containerMenu instanceof CompactReactorMenu reactorMenu) {
             menuMatches = tile instanceof CompactReactorTileEntity reactorTile
                     && reactorMenu.isForTile(reactorTile)
                     && reactorMenu.getData(CompactReactorMenu.DATA_POS_READY) == 1;
-        } else if (player.containerMenu instanceof com.compact.extremereactor.common.menu.CompactFluidizerMenu fluidizerMenu) {
-            menuMatches = tile instanceof com.compact.extremereactor.common.tile.CompactFluidizerTileEntity fluidizerTile
+        } else if (player.containerMenu instanceof CompactFluidizerMenu fluidizerMenu) {
+            menuMatches = tile instanceof CompactFluidizerTileEntity fluidizerTile
                     && fluidizerMenu.isForTile(fluidizerTile)
-                    && fluidizerMenu.getData(com.compact.extremereactor.common.menu.CompactFluidizerMenu.DATA_POS_READY) == 1;
+                    && fluidizerMenu.getData(CompactFluidizerMenu.DATA_POS_READY) == 1;
         } else {
             menuMatches = false;
         }
@@ -277,13 +250,6 @@ public final class ModPackets {
         }
         if (player.distanceToSqr(payload.pos().getCenter()) >= 64) {
             CompactExtremeReactor.LOGGER.warn("玩家 {} 尝试远程操作 @{}，已忽略",
-                    player.getName().getString(), payload.pos());
-            return;
-        }
-        // 涡轮机 GUI 不提供开关：拒绝 ACTION_TOGGLE_ACTIVE 包（否则玩家关后无 UI 重开）
-        if (payload.action() == ACTION_TOGGLE_ACTIVE
-                && tile instanceof com.compact.extremereactor.common.tile.CompactTurbineTileEntity) {
-            CompactExtremeReactor.LOGGER.debug("玩家 {} 尝试 toggle 涡轮机 @{}，已拒绝（无 GUI 开关）",
                     player.getName().getString(), payload.pos());
             return;
         }
@@ -304,7 +270,7 @@ public final class ModPackets {
             return;
         }
         if (payload.action() == ACTION_CLEAR_INPUTS
-                && !(controller instanceof com.compact.extremereactor.common.multiblock.CompactFluidizerController)) {
+                && !(controller instanceof CompactFluidizerController)) {
             return;
         }
         // 仅对已通过所有权限和目标校验的有效操作限速，避免错误包阻塞合法 GUI 操作。
@@ -314,7 +280,7 @@ public final class ModPackets {
         switch (payload.action()) {
             case ACTION_TOGGLE_ACTIVE -> {
                 controller.setMachineActive(!controller.isMachineActive());
-                // 激活状态需要持久化，立即标记方块保存
+
                 tile.setChanged();
             }
             case ACTION_VOID_WASTE -> {
@@ -327,16 +293,11 @@ public final class ModPackets {
                 }
             }
             case ACTION_CLEAR_INPUTS -> {
-                if (controller instanceof com.compact.extremereactor.common.multiblock.CompactFluidizerController fluidizer) {
+                if (controller instanceof CompactFluidizerController fluidizer) {
                     fluidizer.clearInputs();
                     tile.setChanged();
                     CompactExtremeReactor.LOGGER.debug("压缩流化器清空进料 @ {}", payload.pos());
                 }
-            }
-            default -> {
-                // 未知 action：可能是更旧/更新客户端发的越界值，记日志便于诊断
-                CompactExtremeReactor.LOGGER.debug("未知机器动作 {} @ {}，已忽略",
-                        payload.action(), payload.pos());
             }
         }
     }

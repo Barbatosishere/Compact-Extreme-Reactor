@@ -13,7 +13,6 @@ import net.neoforged.neoforge.fluids.capability.IFluidHandler;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.List;
 import java.util.Optional;
 
 /** Combined reactor fluid capability: coolant in, vapor out, and reactant fuel in. */

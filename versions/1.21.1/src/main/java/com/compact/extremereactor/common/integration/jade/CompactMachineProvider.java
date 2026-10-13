@@ -16,11 +16,7 @@ import snownee.jade.api.config.IPluginConfig;
 import net.minecraft.network.chat.Component;
 import net.minecraft.ChatFormatting;
 
-/**
- * Jade HUD 提供器（客户端）：显示压缩机器的运行状态、能量、燃料/废物等信息。
- * 数据由 {@link ServerProvider} 在服务端收集并写入 {@link CompoundTag}，
- * 客户端通过 {@link BlockAccessor#getServerData()} 读取。
- */
+/** 通过 Jade 同步并显示机器状态。 */
 public enum CompactMachineProvider implements IBlockComponentProvider {
 
     INSTANCE;
@@ -58,7 +54,6 @@ public enum CompactMachineProvider implements IBlockComponentProvider {
                     .withStyle(active ? ChatFormatting.GREEN : ChatFormatting.RED));
         }
 
-        // 能量
         final long energy = data.getLong("Energy");
         final long capacity = data.getLong("EnergyCapacity");
         if (capacity > 0) {
@@ -66,13 +61,11 @@ public enum CompactMachineProvider implements IBlockComponentProvider {
                     formatEnergy(energy, capacity)));
         }
 
-        // 发电量
         final double power = data.getDouble("Power");
         if (power > 0) {
             tooltip.add(Component.translatable("gui.compactextremereactor.power", (int) power));
         }
 
-        // 反应堆：燃料/废物
         final int fuel = data.getInt("Fuel");
         if (fuel > 0) {
             tooltip.add(Component.translatable("gui.compactextremereactor.fuel", fuel));
@@ -82,7 +75,6 @@ public enum CompactMachineProvider implements IBlockComponentProvider {
             tooltip.add(Component.translatable("gui.compactextremereactor.waste", waste));
         }
 
-        // 涡轮机：蒸汽/水
         final int steam = data.getInt("Steam");
         if (steam > 0) {
             tooltip.add(Component.translatable("gui.compactextremereactor.steam", steam));
@@ -92,7 +84,6 @@ public enum CompactMachineProvider implements IBlockComponentProvider {
             tooltip.add(Component.translatable("gui.compactextremereactor.water", water));
         }
 
-        // 流化器：配方模式 / 进度 / 产物量
         if (data.contains("RecipeMode")) {
             final String modeName = data.getString("RecipeMode");
             tooltip.add(Component.translatable("gui.compactextremereactor.fluidizer_mode",
@@ -110,29 +101,17 @@ public enum CompactMachineProvider implements IBlockComponentProvider {
     }
 
     private String formatEnergy(long energy, long capacity) {
-        // 使用 StringBuilder 替代 String.format：避免每帧创建 Formatter + StringBuilder + String 三对象
-        final StringBuilder sb = ENERGY_BUILDER.get();
-        sb.setLength(0);
-        if (energy >= 1_000_000) {
-            // 大数值除以 1000 换算为 kFE，单位须同步标注
-            sb.append(energy / 1000).append(" / ").append(capacity / 1000).append(" kFE");
-        } else {
-            sb.append(energy).append(" / ").append(capacity).append(" FE");
-        }
-        return sb.toString();
+        return energy >= 1_000_000
+                ? energy / 1000 + " / " + capacity / 1000 + " kFE"
+                : energy + " / " + capacity + " FE";
     }
-
-    /** 可复用的 StringBuilder（每线程 1 个）：Jade tooltip 每帧调用 formatEnergy 时避免分配 Formatter */
-    private static final ThreadLocal<StringBuilder> ENERGY_BUILDER = ThreadLocal.withInitial(StringBuilder::new);
 
     @Override
     public ResourceLocation getUid() {
         return ID;
     }
 
-    // ------------------------------------------------------------------
     // 服务端数据提供器
-    // ------------------------------------------------------------------
 
     /**
      * 服务端数据提供器：在服务端线程上读取控制器状态，写入 {@link CompoundTag}，
@@ -170,20 +149,17 @@ public enum CompactMachineProvider implements IBlockComponentProvider {
                 tag.putLong("EnergyCapacity", controller.getCapacity(EnergySystem.ForgeEnergy).longValue());
                 tag.putDouble("Power", controller.getEnergyGeneratedLastTick());
 
-                // 反应堆特有数据
-                if (tile instanceof CompactReactorTileEntity reactorTile) {
+                if (tile instanceof CompactReactorTileEntity) {
                     tag.putInt("Fuel", controller.getFuelAmount());
                     tag.putInt("Waste", controller.getWasteAmount());
                 }
 
-                // 涡轮机特有数据
-                if (tile instanceof CompactTurbineTileEntity turbineTile) {
+                if (tile instanceof CompactTurbineTileEntity) {
                     tag.putInt("Steam", controller.getFluidContainer().getGasAmount());
                     tag.putInt("Water", controller.getFluidContainer().getLiquidAmount());
                 }
 
-                // 流化器特有数据
-                if (tile instanceof com.compact.extremereactor.common.tile.CompactFluidizerTileEntity fluidizerTile
+                if (tile instanceof com.compact.extremereactor.common.tile.CompactFluidizerTileEntity
                         && controller instanceof com.compact.extremereactor.common.multiblock.CompactFluidizerController fluidizer) {
                     tag.putInt("FluidizerOutput", fluidizer.getOutputTank().getFluidInTank(0).getAmount());
                     tag.putInt("FluidizerOutputCapacity", fluidizer.getOutputTank().getTankCapacity(0));

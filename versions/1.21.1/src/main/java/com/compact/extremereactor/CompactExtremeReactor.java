@@ -17,14 +17,7 @@ import net.neoforged.neoforge.capabilities.RegisterCapabilitiesEvent;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
-/**
- * Compact Extreme Reactor 主类。
- *
- * 本模组将 Extreme Reactors 的大型多方块机器（反应堆 / 涡轮机）压缩为单个紧凑方块：
- * 压缩方块的 TileEntity 直接持有并驱动 ER 的多方块控制器（MultiblockReactor /
- * MultiblockTurbine 的子类），在内部模拟出等效的多方块部件数据（燃料棒数量、
- * 转子叶片、线圈等），从而复用 ER 完整的反应堆/涡轮机逻辑而不需要真实的多方块结构。
- */
+/** 注册压缩反应堆、涡轮机和流化器及其配置、网络与能力。 */
 @Mod(CompactExtremeReactor.MODID)
 public final class CompactExtremeReactor {
 
@@ -36,6 +29,9 @@ public final class CompactExtremeReactor {
 
         // 注册方块 / 物品 / 方块实体 / 创造模式标签 / 菜单类型
         Content.register(modEventBus);
+        modEventBus.addListener((net.neoforged.fml.event.config.ModConfigEvent.Reloading event) -> {
+            if (event.getConfig().getSpec() == CompactConfig.SPEC) ++CompactConfig.structureRevision;
+        });
 
         // 注册自定义网络数据包（GUI → 服务端指令）
         modEventBus.addListener(ModPackets::registerPayloads);
@@ -75,12 +71,7 @@ public final class CompactExtremeReactor {
                 () -> LOGGER.warn("  - zerocore NOT FOUND (this should be impossible; mandatory dependency)"));
     }
 
-    /**
-     * 注册方块能力（NeoForge 1.21 能力系统：通过事件注册 IBlockCapabilityProvider，
-     * 能力查询直接返回对象而非 LazyOptional）。
-     * 能量：输出发电量；流体：反应堆=水进/蒸汽出，涡轮机=蒸汽进/水出。
-     * 物品：反应堆=燃料进/废物出（管道用）。
-     */
+    /** 注册三类机器的能量、流体和物品能力。 */
     private static void registerCapabilities(RegisterCapabilitiesEvent event) {
         event.registerBlockEntity(Capabilities.EnergyStorage.BLOCK, Content.COMPACT_REACTOR_ENTITY.get(),
                 CompactReactorTileEntity::getEnergyStorage);

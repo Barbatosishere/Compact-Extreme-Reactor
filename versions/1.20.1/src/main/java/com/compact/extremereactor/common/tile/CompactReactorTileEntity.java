@@ -19,15 +19,7 @@ import net.minecraftforge.items.IItemHandler;
 import net.minecraftforge.common.util.LazyOptional;
 import org.jetbrains.annotations.Nullable;
 
-/**
- * 压缩极限反应堆 TileEntity：持有 {@link CompactReactorController} 并驱动其模拟。
- *
- * 一个方块 = 一个完整的反应堆多方块：
- *   - 燃料棒/控制棒/功率接口数量与内部尺寸由 {@link CompactConfig} 决定；
- *   - 水经流体能力输入，蒸汽经流体能力输出（与真实 FluidPort 语义一致）；
- *   - 功率通过能量能力 / 相邻推送输出；
- *   - 控制棒插入比例可通过 {@link #setControlRodInsertionRatio(int)} 调节（GUI 用）。
- */
+/** 反应堆方块实体：水和燃料输入，蒸汽、废料及 FE 输出。 */
 public class CompactReactorTileEntity extends AbstractCompactMachineTileEntity {
 
     public CompactReactorTileEntity(BlockPos pos, BlockState state) {
@@ -36,15 +28,16 @@ public class CompactReactorTileEntity extends AbstractCompactMachineTileEntity {
 
     @Override
     protected ICompactController createController() {
+        var structure = this.getStructureState();
         // 从配置读取模拟参数，向 ER 控制器"谎报"多方块规模
         return new CompactReactorController(this.level,
                 this.worldPosition,
-                CompactConfig.REACTOR_FUEL_RODS.get(),
-                CompactConfig.REACTOR_CONTROL_RODS.get(),
-                CompactConfig.REACTOR_POWER_TAPS.get(),
+                structure.scaled(CompactConfig.REACTOR_FUEL_RODS.get()),
+                structure.scaled(CompactConfig.REACTOR_CONTROL_RODS.get()),
+                structure.scaled(CompactConfig.REACTOR_POWER_TAPS.get()),
                 CompactConfig.REACTOR_SIZE_X.get(),
                 CompactConfig.REACTOR_SIZE_Y.get(),
-                CompactConfig.REACTOR_SIZE_Z.get());
+                CompactConfig.REACTOR_SIZE_Z.get(), structure.simulationScale());
     }
 
     @Override
@@ -88,12 +81,9 @@ public class CompactReactorTileEntity extends AbstractCompactMachineTileEntity {
         };
     }
 
-    // ------------------------------------------------------------------
-    // 物品能力（供管道输入燃料 / 提取废物）
-    // ------------------------------------------------------------------
 
     @Nullable
-    private IItemHandler _itemHandler;
+    private CompactReactorItemHandler _itemHandler;
 
     /** 物品能力 LazyOptional 缓存：同一能力必须返回同一实例并在失效时通知缓存方（Forge 规范）。 */
     @Nullable
@@ -134,16 +124,13 @@ public class CompactReactorTileEntity extends AbstractCompactMachineTileEntity {
 
     @Override
     protected void onControllerReleased() {
-        // 控制器释放后使旧物品处理器 fail-closed，防止重新挂载时旧引用连接到新控制器
-        if (this._itemHandler instanceof CompactReactorItemHandler reactorItemHandler) {
-            reactorItemHandler.release();
+        // 释放旧能力，防止重载后访问新控制器。
+        if (this._itemHandler != null) {
+            this._itemHandler.release();
         }
         this._itemHandler = null;
     }
 
-    // ------------------------------------------------------------------
-    // 控制棒调节（供 GUI 使用）
-    // ------------------------------------------------------------------
 
     /** 当前模拟控制棒插入比例（0-100）。 */
     public byte getControlRodInsertionRatio() {

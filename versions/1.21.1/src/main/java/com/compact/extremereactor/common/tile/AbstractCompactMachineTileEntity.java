@@ -5,6 +5,13 @@ import com.compact.extremereactor.common.capability.CompactEnergyStorage;
 import com.compact.extremereactor.common.capability.CompactReactorFluidHandler;
 import com.compact.extremereactor.common.capability.DeferredFluidHandler;
 import com.compact.extremereactor.common.multiblock.ICompactController;
+import com.compact.extremereactor.common.config.CompactConfig;
+import com.compact.extremereactor.common.structure.StructureInventory;
+import com.compact.extremereactor.common.structure.StructureKind;
+import com.compact.extremereactor.common.structure.StructureState;
+import net.minecraft.core.NonNullList;
+import net.minecraft.world.ContainerHelper;
+import net.minecraft.world.item.ItemStack;
 import it.zerono.mods.zerocore.lib.data.WideAmount;
 import it.zerono.mods.zerocore.lib.data.nbt.ISyncableEntity;
 import it.zerono.mods.zerocore.lib.data.stack.OperationMode;
@@ -16,10 +23,12 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientGamePacketListener;
 import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
+import net.neoforged.neoforge.capabilities.BlockCapabilityCache;
 import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.energy.IEnergyStorage;
@@ -28,31 +37,60 @@ import net.neoforged.neoforge.event.server.ServerStoppedEvent;
 import net.neoforged.neoforge.fluids.capability.IFluidHandler;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.HashSet;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
-/**
- * 压缩机器 TileEntity 基类。
- *
- * 职责：
- * 1. 延迟初始化并驱动 ER 多方块控制器模拟（见 {@link ICompactController}）。
- *    由于 TileEntity 构造时拿不到 Level，控制器统一排队到顶层服务端 tick 创建；
- *    存档中的控制器 NBT 先暂存，初始化完成后再恢复。
- * 2. NBT 存取：委托给控制器的 syncDataFrom / syncDataTo（与 ER 原生存档格式一致，
- *    存的是燃料/蒸汽/能量/转子状态，容量由模拟装配重新计算）。
- * 3. 能力暴露：IEnergyStorage（提取功率）+ IFluidHandler（进料/出料）。
- * 4. 每服务端刻由 {@link ServerTickEvent} 驱动的全局 tick：模拟 PowerTap，
- *    向 6 个相邻方块的能源接口主动推送能量、驱动控制器模拟。
- *
- * <p><b>为什么用 ServerTickEvent 而不是方块 ticker：</b>
- * NeoForge 1.21.1 的 {@code setblock} 路径（{@code Level.setBlock} → {@code LevelChunk.addEntity}
- * → {@code LevelChunk.setBlockEntity}）不注册方块 ticker（ticker 注册只发生在
- * {@code LevelChunk.addAndRegisterBlockEntity()} → {@code updateBlockEntityTicker()}，
- * 而 {@code setBlockEntity} 不调用它）。因此 {@code setblock} 放置的机器（含 vanilla 熔炉）
- * 在 1.21.1 上 {@code serverTick()} 永不执行。改用全局事件驱动，绕开 ticker 机制。</p>
- */
+/** 管理控制器的延迟初始化、逐 tick 模拟、存档和能力生命周期。 */
 public abstract class AbstractCompactMachineTileEntity extends BlockEntity {
+    private StructureInventory structureInventory;
+    private StructureState structureState;
+    private int structureRevision = -1;
+    private int assembledScale = -1;
+    private int assembledRevision = -1;
+    private boolean structureDropped;
+
+    public StructureKind getStructureKind() {
+        if (this instanceof CompactReactorTileEntity) return StructureKind.REACTOR;
+        if (this instanceof CompactTurbineTileEntity) return StructureKind.TURBINE;
+        return StructureKind.FLUIDIZER;
+    }
+
+    public final StructureInventory getStructureInventory() {
+        if (this.structureInventory == null) {
+            this.structureInventory = new StructureInventory(this.getStructureKind());
+            this.structureInventory.addListener(container -> {
+                this.structureState = null;
+                if (this.level != null && !this.level.isClientSide) this.setChanged();
+            });
+        }
+        return this.structureInventory;
+    }
+
+    public final StructureState getStructureState() {
+        int revision = CompactConfig.structureRevision;
+        if (this.structureState == null || this.structureRevision != revision) {
+            this.structureState = StructureState.read(
+                    this.getStructureKind(), this.getStructureInventory());
+            this.structureRevision = revision;
+        }
+        return this.structureState;
+    }
+
+    protected final boolean prepareStructureTick() {
+        int scale = Math.max(100_000, this.getStructureState().scaleUnits());
+        if (this._controller != null && (this.assembledScale != scale || this.assembledRevision != this.structureRevision)) {
+            this.snapshotControllerData();
+            this.releaseController();
+            this.onControllerReleased();
+            this.invalidateCapabilities();
+            TICKING_MACHINES.remove(this);
+            this.enqueuePendingInit();
+            return false;
+        }
+        return true;
+    }
 
     /** 每游戏刻向相邻方块推送的最大能量（FE/t），模拟 PowerTap 的输出上限。 */
     protected static final long POWER_TRANSFER_RATE = 1_000_000L;
@@ -60,37 +98,19 @@ public abstract class AbstractCompactMachineTileEntity extends BlockEntity {
     /** POWER_TRANSFER_RATE 的 WideAmount 缓存（避免 pushPower 每方向每 tick 创建新对象）。 */
     protected static final WideAmount POWER_TRANSFER_AMOUNT = WideAmount.from(POWER_TRANSFER_RATE);
 
-    /**
-     * 缓存的方向数组（消除 pushPower 每 tick 调 {@code Direction.values()} 创建新数组的 GC 压力）。
-     * Minecraft 的 {@code Direction.values()} 实际返回 {@code $VALUES.clone()}——每次都新建数组。
-     */
+    /** 缓存方向数组，避免每 tick 克隆 Direction.values()。 */
     private static final Direction[] DIRS = Direction.values();
 
     @Nullable
-    private BlockPos[] _powerNeighborPositions;
+    private List<BlockCapabilityCache<IEnergyStorage, Direction>> _powerNeighborCaches;
 
-    /** 所有已加载的压缩机器实例（服务端），由 ServerTickEvent 驱动 tick。
-     * 用 {@link ConcurrentHashMap#newKeySet()} 实现：当前所有写入都在服务端主线程，
-     * 但 set 的 CAS/无锁语义对未来潜在的 worker-thread 路径免疫（zero-cost 主线程访问）。 */
+    private int _powerCacheGeneration;
+    private boolean _inControllerTick;
+
+    /** tick 注册表；迭代期间的生命周期回调可能增删机器。 */
     private static final Set<AbstractCompactMachineTileEntity> TICKING_MACHINES = ConcurrentHashMap.newKeySet();
 
-    /**
-     * 待初始化的机器（服务端）：{@code setLevel()}/{@code onLoad()} 只把机器加入此队列，
-     * 真正的 {@code initController()} 调用推迟到下一次 {@link ServerTickEvent.Post} 触发时
-     * （见 {@link #handleServerTick}），确保不会在 chunk 反序列化的嵌套调用栈内同步执行。
-     *
-     * <p><b>为什么不能在 setLevel()/onLoad() 里直接同步调 initController()：</b>
-     * 读档时 {@code setLevel()} 是从 {@code ChunkSerializer.postLoadChunk()} 内、经
-     * {@code MinecraftServer.pollTask() → managedBlock()} 嵌套调用的。若在这条调用栈里
-     * 同步执行 {@code initController()} 末尾的 {@code setChanged()}，会经
-     * {@code Level.updateNeighbourForOutputSignal() → getBlockState() → getChunk()}
-     * 反过来同步等待"当前正在加载的同一个 chunk"，形成自我阻塞。
-     * {@code level.getServer().execute(...)} **不能**规避这个问题——{@code BlockableEventLoop.execute()}
-     * 在调用线程就是被管理线程（这里就是 Server thread）时会直接内联执行任务，并不会真正推迟。
-     * 只有 {@link ServerTickEvent.Post} 这种由 NeoForge 在 tick 循环顶层派发的事件，
-     * 才保证不嵌套在 chunk 加载栈内——两次实测复现（jcmd Thread.print 确认卡在
-     * "Preparing spawn area"）+ 两次验证修复方案。</p>
-     */
+    /** 装配推迟到顶层服务端 tick，避免读档时反向等待正在加载的区块。Server.execute 在主线程可能内联，不能替代此队列。 */
     private static final Set<AbstractCompactMachineTileEntity> PENDING_INIT = ConcurrentHashMap.newKeySet();
 
     /** 控制器 NBT 顶层 key（用于 saveAdditional / loadAdditional 嵌套存根）。 */
@@ -100,8 +120,7 @@ public abstract class AbstractCompactMachineTileEntity extends BlockEntity {
     @Nullable
     protected volatile ICompactController _controller;
 
-    /** 反序列化时控制器尚未创建时暂存的 NBT，待初始化完成后应用。
-     * volatile 保证 setLevel（loadControllerData 写）→ initController（读）的内存可见性。 */
+    /** 初始化前暂存的控制器 NBT；卸载快照也通过此字段恢复。 */
     @Nullable
     private volatile CompoundTag _pendingControllerTag;
 
@@ -114,7 +133,7 @@ public abstract class AbstractCompactMachineTileEntity extends BlockEntity {
 
     /** 稳定的流体能力代理；控制器尚未初始化时只排队，不触发初始化副作用。 */
     @Nullable
-    private IFluidHandler _fluidCapabilityHandler;
+    private DeferredFluidHandler _fluidCapabilityHandler;
 
     /** 卸载、移除或失败清理期间阻止能力查询重新懒初始化控制器。 */
     private volatile boolean _runtimeUnavailable;
@@ -123,9 +142,7 @@ public abstract class AbstractCompactMachineTileEntity extends BlockEntity {
         super(type, pos, state);
     }
 
-    // ------------------------------------------------------------------
     // 全局 tick 驱动（ServerTickEvent）
-    // ------------------------------------------------------------------
 
     /** 注册 ServerTickEvent 处理器（由主类在 mod 构造时调用一次）。 */
     public static void registerServerTickHandler() {
@@ -140,6 +157,10 @@ public abstract class AbstractCompactMachineTileEntity extends BlockEntity {
 
     /** 每个服务端游戏刻遍历所有已加载机器，驱动 serverTick()。 */
     private static void handleServerTick(ServerTickEvent.Post event) {
+        if (PENDING_INIT.isEmpty() && TICKING_MACHINES.isEmpty()) {
+            return;
+        }
+        final MachineTickContext tickContext = new MachineTickContext();
         // 先处理待初始化队列：此时已脱离 chunk 加载/setLevel 调用栈，可安全同步调 initController()。
         if (!PENDING_INIT.isEmpty()) {
             final var pendingIt = PENDING_INIT.iterator();
@@ -150,7 +171,7 @@ public abstract class AbstractCompactMachineTileEntity extends BlockEntity {
                     pendingIt.remove();
                     continue;
                 }
-                if (!level.tickRateManager().runsNormally() || !level.shouldTickBlocksAt(be.worldPosition)) {
+                if (!level.tickRateManager().runsNormally() || !tickContext.shouldTick(level, be.worldPosition)) {
                     continue;
                 }
                 pendingIt.remove();
@@ -167,8 +188,7 @@ public abstract class AbstractCompactMachineTileEntity extends BlockEntity {
                 }
             }
         }
-        // 单遍遍历：边清理失效/已卸载的机器，边驱动存活机器 tick。
-        // 用迭代器而非 removeIf+for，避免对集合做两遍遍历。
+
         final var it = TICKING_MACHINES.iterator();
         while (it.hasNext()) {
             final AbstractCompactMachineTileEntity be = it.next();
@@ -177,12 +197,10 @@ public abstract class AbstractCompactMachineTileEntity extends BlockEntity {
                 it.remove();
                 continue;
             }
-            if (!level.isLoaded(be.worldPosition) || !level.tickRateManager().runsNormally()
-                    || !level.shouldTickBlocksAt(be.worldPosition)) {
+            if (!level.tickRateManager().runsNormally() || !tickContext.shouldTick(level, be.worldPosition)) {
                 continue;
             }
-            // 单机器 tick 异常隔离：单台机器崩溃（ER 内部 NPE/IOOB）不应导致
-            // 本 tick 后续所有机器都停转；标记该机器 _initFailed 并从 set 移除
+            // 隔离单台机器异常，允许其余机器继续运行。
             try {
                 be.serverTick();
             } catch (Throwable t) {
@@ -193,9 +211,6 @@ public abstract class AbstractCompactMachineTileEntity extends BlockEntity {
         }
     }
 
-    // ------------------------------------------------------------------
-    // 控制器生命周期
-    // ------------------------------------------------------------------
 
     /** 创建模拟控制器（子类实现，从配置读取模拟参数）。 */
     protected abstract ICompactController createController();
@@ -213,11 +228,7 @@ public abstract class AbstractCompactMachineTileEntity extends BlockEntity {
         return this._controller;
     }
 
-    /**
-     * 控制器初始化失败标志位：true 时 {@link #initController()} 立即返回，
-     * 避免外部依赖（ER 类加载失败、配置越界等）导致每 tick 重试并 log spam。
-     * {@code volatile} 保证 serverTick / saveAdditional / setChanged 等多路径的内存可见性。
-     */
+    /** 初始化失败后停止重试，避免逐 tick 重复报错。 */
     private volatile boolean _initFailed;
 
     private synchronized void initController() {
@@ -225,16 +236,13 @@ public abstract class AbstractCompactMachineTileEntity extends BlockEntity {
                 || this._runtimeUnavailable || this._initFailed) {
             return;
         }
-        // 方法级 synchronized 持锁期间二次守卫：防御未来重入路径
-        // （如 onControllerInitialized 回调）在半初始化状态下的穿透。
-        if (this._controller != null || this._runtimeUnavailable || this._initFailed) {
-            return;
-        }
         try {
             this._controller = this.createController();
-            // 流体脏标记接线：管道 fill/drain 落到 ER FluidContainer 后立即 setChanged，
-            // 流体内容尽快落盘（否则依赖 serverTick 的 1 秒兜底保存）
-            this._controller.setFluidDirtyCallback(this::setChanged);
+            this.assembledScale = Math.max(100_000, this.getStructureState().scaleUnits());
+            this.assembledRevision = this.structureRevision;
+            this._controller.setStructureReady(() -> this.getStructureState().ready());
+            // 外部能力变更立即标记存档；模拟中的重复回调在 tick 末尾合并。
+            this._controller.setFluidDirtyCallback(this::markControllerChanged);
             // 1. 模拟装配：用配置的模拟尺寸初始化能量/流体/燃料容量
             this._controller.simulateAssembly();
             this.onControllerInitialized(this._controller);
@@ -246,26 +254,16 @@ public abstract class AbstractCompactMachineTileEntity extends BlockEntity {
             }
             // 3. 创建真实流体处理器；对外能力代理保持同一对象并自动开始转发
             this._fluidHandler = this.createFluidHandler();
-            // 初始化完成后立即标记脏数据：新机器的激活状态/容量/初始控制器数据
-            // 必须及时进入存档，而不是等到每 20 tick 或首个 GUI 操作才保存。
-            // initController() 只从 handleServerTick() 的 PENDING_INIT 处理调用，
-            // 不嵌套在 chunk 加载调用栈内，可以安全同步调用 setChanged()。
+            // 初始容量和状态立即参与存档。
             this.setChanged();
         } catch (Throwable t) {
-            // 初始化失败（ER API 不兼容、配置越界等）：标记失败并清理半成品状态。
-            // 失败机器不会进入 TICKING_MACHINES（setLevel 守卫）、不会反复重试（_initFailed），
-            // 玩家在 GUI 中也能看到"控制器不可用"的反馈。
+            // 禁用失败机器，释放半成品并保留可恢复数据。
             CompactExtremeReactor.LOGGER.error("Compact {} 初始化控制器失败 @{}, 机器将被禁用",
                     this.getClass().getSimpleName(), this.worldPosition, t);
             this.snapshotControllerData();
             this._runtimeUnavailable = true;
             this._initFailed = true;
-            this.releaseEnergyStorage();
-            if (this._controller != null) {
-                this._controller.releaseFluidHandlers();
-            }
-            this._controller = null;
-            this.releaseFluidHandlers();
+            this.releaseController();
             this.onControllerReleased();
             this.invalidateCapabilities();
             // 保留 snapshot/pending NBT，确保初始化异常不会把已恢复的机器状态写成空数据。
@@ -273,10 +271,7 @@ public abstract class AbstractCompactMachineTileEntity extends BlockEntity {
         }
     }
 
-    /**
-     * 将当前 controller 状态暂存到 pending NBT，再允许释放 controller。
-     * 快照失败时保留已有 pending 数据，避免异常处理路径进一步扩大状态损失。
-     */
+    /** 释放前快照控制器；已有 pending NBT 优先保留。 */
     private void snapshotControllerData() {
         final ICompactController controller = this._controller;
         final Level level = this.level;
@@ -295,8 +290,19 @@ public abstract class AbstractCompactMachineTileEntity extends BlockEntity {
         }
     }
 
+    private void releaseController() {
+        this.releaseEnergyStorage();
+        final ICompactController controller = this._controller;
+        if (controller != null) {
+            controller.releaseFluidHandlers();
+        }
+        this._controller = null;
+        this.releaseFluidHandlers();
+    }
+
     /** 释放能量包装，使外部已经缓存的旧能力引用立即 fail-closed。 */
     private void releaseEnergyStorage() {
+        this.clearPowerNeighborCaches();
         final CompactEnergyStorage storage = this._energyStorage;
         if (storage != null) {
             storage.release();
@@ -310,8 +316,8 @@ public abstract class AbstractCompactMachineTileEntity extends BlockEntity {
             reactorFluidHandler.release();
         }
         this._fluidHandler = null;
-        if (this._fluidCapabilityHandler instanceof DeferredFluidHandler deferredHandler) {
-            deferredHandler.release();
+        if (this._fluidCapabilityHandler != null) {
+            this._fluidCapabilityHandler.release();
         }
         this._fluidCapabilityHandler = null;
     }
@@ -328,27 +334,16 @@ public abstract class AbstractCompactMachineTileEntity extends BlockEntity {
         }
     }
 
-    /**
-     * 从 TICKING_MACHINES 注销并标记 init 失败（用于 serverTick 异常隔离）。
-     * 公开以便 handleServerTick 异常 catch 块调用——单台机器崩溃不影响其他机器 tick。
-     */
+    /** 禁用异常机器并保留存档快照，使旧能力引用失效。 */
     public void markInitFailedAndUnregister() {
         TICKING_MACHINES.remove(this);
         PENDING_INIT.remove(this);
         this.snapshotControllerData();
         this._runtimeUnavailable = true;
         this._initFailed = true;
-        this.releaseEnergyStorage();
-        final ICompactController controller = this._controller;
-        if (controller != null) {
-            controller.releaseFluidHandlers();
-        }
-        this._controller = null;
-        this.releaseFluidHandlers();
+        this.releaseController();
         this.onControllerReleased();
-        // 保留 snapshot/pending NBT，防止 serverTick 异常后的下次保存丢失燃料、流体和能量。
-        // 通知 NeoForge 能力监听方（如 BlockCapabilityCache）重新查询：
-        // 防止"幽灵机器"——tick 已停但旧能力对象仍可被写入，能量/物品进入即消失
+        // 保留快照，并通知能力缓存方丢弃旧引用。
         this.invalidateCapabilities();
         this.markChangedSafely();
     }
@@ -357,10 +352,7 @@ public abstract class AbstractCompactMachineTileEntity extends BlockEntity {
     protected void onControllerReleased() {
     }
 
-    /**
-     * 控制器是否初始化失败（GUI 同步此标志给客户端以禁用按钮）。
-     * 失败状态下 {@link #getController()} 永远返 null，机器不会进入 tick 列表。
-     */
+    /** GUI 用此标志显示初始化失败并禁用操作。 */
     public boolean isControllerInitFailed() {
         return this._initFailed;
     }
@@ -378,15 +370,12 @@ public abstract class AbstractCompactMachineTileEntity extends BlockEntity {
     @Override
     public void onLoad() {
         super.onLoad();
-        // 只加入待初始化队列，不在此同步调用 initController()——onLoad 在读档路径上
-        // 可能与 setLevel 一样嵌套在 ChunkSerializer.postLoadChunk 调用栈内。
-        // 真正的初始化统一推迟到下一次 ServerTickEvent.Post（见 PENDING_INIT 字段注释）。
+        // 此处仍可能处于区块加载栈；由 PENDING_INIT 在服务端 tick 完成装配。
         if (this.level == null || this.level.isClientSide || this.isRemoved()) {
             return;
         }
         this._runtimeUnavailable = false;
-        // Set.add 本身幂等：重复 onLoad 只会确保机器仍在全局 tick 集合中，
-        // 不会重复 tick；关键是不能先 remove 已初始化的机器。
+        // 重复 onLoad 保持已初始化机器的注册，Set 避免重复 tick。
         if (this._controller != null) {
             this.restoreRuntimeHandlers();
             TICKING_MACHINES.add(this);
@@ -401,7 +390,7 @@ public abstract class AbstractCompactMachineTileEntity extends BlockEntity {
         if (controller == null || this._runtimeUnavailable || this.level == null || this.level.isClientSide) {
             return;
         }
-        controller.setFluidDirtyCallback(this::setChanged);
+        controller.setFluidDirtyCallback(this::markControllerChanged);
         if (this._fluidHandler == null) {
             this._fluidHandler = this.createFluidHandler();
         }
@@ -411,6 +400,9 @@ public abstract class AbstractCompactMachineTileEntity extends BlockEntity {
     public void setLevel(Level level) {
         // setLevel 可能在区块反序列化、复制或重新挂载路径中重复调用；这里只设置 Level，
         // 不修改 tick 集合，也不触发初始化，避免已初始化机器被静默移出全局驱动。
+        if (this.level != level) {
+            this.clearPowerNeighborCaches();
+        }
         super.setLevel(level);
     }
 
@@ -422,8 +414,7 @@ public abstract class AbstractCompactMachineTileEntity extends BlockEntity {
         }
     }
 
-    /** 创建流体能力包装（子类实现：反应堆=水进/蒸汽出，涡轮机=蒸汽进/水出）。
-     * 无参：从已初始化的 {@code this._controller} 读取，避免重复传递参数。 */
+    /** 为已初始化的控制器创建流体能力包装。 */
     protected abstract IFluidHandler createFluidHandler();
 
     /** 控制器初始化前对外声明的逻辑流体槽数量。 */
@@ -432,64 +423,96 @@ public abstract class AbstractCompactMachineTileEntity extends BlockEntity {
     /** 控制器初始化前使用的静态流体过滤，不读取当前槽内容或容量。 */
     protected abstract boolean isPendingFluidValid(int tank, net.neoforged.neoforge.fluids.FluidStack stack);
 
-    // ------------------------------------------------------------------
-    // 游戏刻驱动
-    // ------------------------------------------------------------------
 
     /** 每个服务端游戏刻调用一次（由 ServerTickEvent 驱动）：驱动控制器模拟并推送能量。 */
     public void serverTick() {
         if (this.level == null || this.level.isClientSide) {
             return;
         }
+        if (!this.prepareStructureTick()) return;
         final ICompactController controller = this._controller;
         if (controller == null) {
             return;
         }
         // 驱动一游戏刻的机器逻辑（燃料消耗、热量、发电、流体循环等）
-        controller.tick();
+        this.tickController(controller);
         // 模拟 PowerTap：向相邻方块主动推送能量
         this.pushPower(controller);
-        // ER 控制器内部标记的是模拟 bounding box，不覆盖真实方块；控制器每 tick
-        // 都可能改变燃料、热量、流体或能量，因此每 tick 标记真实方块，避免在区块
-        // 卸载前落入“未 dirty 的尾部状态”而被保存系统跳过。
-        this.setChanged();
+    }
+
+    /** 当 tick 标记真实区块，保证模拟后的燃料、热量和缓冲数据参与下一次保存。 */
+    protected final void tickController(ICompactController controller) {
+        this._inControllerTick = true;
+        try {
+            controller.tick();
+        } finally {
+            this._inControllerTick = false;
+            this.markControllerChanged();
+        }
+    }
+
+    /**
+     * 机器没有比较器输出。高频控制器回调只需标记区块，不需要遍历六面邻居。
+     * GUI/物品操作等显式 setChanged() 仍使用原版的完整通知路径。
+     */
+    private void markControllerChanged() {
+        if (!this._inControllerTick && this.level != null && !this.level.isClientSide) {
+            this.level.blockEntityChanged(this.worldPosition);
+        }
+    }
+
+    private void clearPowerNeighborCaches() {
+        this._powerNeighborCaches = null;
+        ++this._powerCacheGeneration;
     }
 
     /** 模拟 PowerTap 输出：向 6 个相邻方块的 IEnergyStorage 能力推送能量。 */
     protected void pushPower(ICompactController controller) {
-        if (controller.extractEnergy(EnergySystem.ForgeEnergy,
-                POWER_TRANSFER_AMOUNT, OperationMode.Simulate).isZero()) {
+        long available = controller.extractEnergy(EnergySystem.ForgeEnergy,
+                POWER_TRANSFER_AMOUNT, OperationMode.Simulate).longValue();
+        if (available <= 0) {
             return;
         }
-        if (this._powerNeighborPositions == null) {
-            this._powerNeighborPositions = new BlockPos[DIRS.length];
-            for (Direction dir : DIRS) {
-                this._powerNeighborPositions[dir.ordinal()] = this.worldPosition.relative(dir);
-            }
+        if (!(this.level instanceof ServerLevel serverLevel)) {
+            return;
         }
-        for (Direction dir : DIRS) {
-            final BlockPos neighborPos = this._powerNeighborPositions[dir.ordinal()];
-            if (!this.level.isLoaded(neighborPos)) {
-                continue;
+        if (this._powerNeighborCaches == null) {
+            final int generation = this._powerCacheGeneration;
+            final List<BlockCapabilityCache<IEnergyStorage, Direction>> caches = new ArrayList<>(DIRS.length);
+            for (Direction dir : DIRS) {
+                caches.add(BlockCapabilityCache.create(Capabilities.EnergyStorage.BLOCK,
+                        serverLevel, this.worldPosition.relative(dir), dir.getOpposite(),
+                        () -> this.canExposeRuntimeCapabilities() && this.level == serverLevel
+                                && this._powerCacheGeneration == generation,
+                        () -> {}));
             }
-            // NeoForge 1.21 能力查询直接返回对象（null 表示无此能力）
-            final IEnergyStorage neighbor =
-                    this.level.getCapability(Capabilities.EnergyStorage.BLOCK, neighborPos, dir.getOpposite());
+            this._powerNeighborCaches = caches;
+        }
+        final List<BlockCapabilityCache<IEnergyStorage, Direction>> caches = this._powerNeighborCaches;
+        boolean refreshAvailable = false;
+        for (int i = 0; i < caches.size(); ++i) {
+            // 方块替换、能力失效和区块加载/卸载由 NeoForge 自动使缓存失效。
+            final IEnergyStorage neighbor = caches.get(i).getCapability();
             if (neighbor == null) {
                 continue;
             }
-            // 先模拟提取，确认可输出量
-            final long available = controller.extractEnergy(EnergySystem.ForgeEnergy,
-                    POWER_TRANSFER_AMOUNT, OperationMode.Simulate).longValue();
-            if (available <= 0) {
-                continue;
+            // Reuse the initial simulation for the first receiver; each side keeps its own limit.
+            if (refreshAvailable) {
+                available = controller.extractEnergy(EnergySystem.ForgeEnergy,
+                        POWER_TRANSFER_AMOUNT, OperationMode.Simulate).longValue();
+                if (available <= 0) {
+                    break;
+                }
             }
-            // 推送到相邻方块并真实扣除
+            refreshAvailable = true;
             final int offered = (int) Math.min(available, Integer.MAX_VALUE);
             final int accepted = Math.min(offered, Math.max(0, neighbor.receiveEnergy(offered, false)));
             if (accepted > 0) {
-                controller.extractEnergy(EnergySystem.ForgeEnergy,
-                        WideAmount.from(accepted), OperationMode.Execute);
+                final long extracted = controller.extractEnergy(EnergySystem.ForgeEnergy,
+                        WideAmount.from(accepted), OperationMode.Execute).longValue();
+                if (extracted <= 0) {
+                    break;
+                }
             }
         }
     }
@@ -501,37 +524,26 @@ public abstract class AbstractCompactMachineTileEntity extends BlockEntity {
         PENDING_INIT.remove(this);
         this.snapshotControllerData();
         this._runtimeUnavailable = true;
-        this.releaseEnergyStorage();
-        final ICompactController controller = this._controller;
-        if (controller != null) {
-            controller.releaseFluidHandlers();
-        }
-        this._controller = null;
-        this.releaseFluidHandlers();
+        this.releaseController();
         this.onControllerReleased();
         this.invalidateCapabilities();
     }
 
     /** 方块被移除时释放控制器与能力缓存，并从全局 tick 列表注销（由方块类调用）。 */
     public void onBlockRemoved() {
+        if (this.level != null && !this.level.isClientSide && !this.structureDropped) {
+            this.structureDropped = true;
+            this.getStructureInventory().dropContents(this.level, this.worldPosition, ItemStack::isSameItemSameComponents);
+        }
         TICKING_MACHINES.remove(this);
         PENDING_INIT.remove(this);
         this._runtimeUnavailable = true;
-        this.releaseEnergyStorage();
-        final ICompactController controller = this._controller;
-        if (controller != null) {
-            controller.releaseFluidHandlers();
-        }
-        this._controller = null;
-        this.releaseFluidHandlers();
+        this.releaseController();
         this._pendingControllerTag = null;
         this.onControllerReleased();
         this.invalidateCapabilities();
     }
 
-    // ------------------------------------------------------------------
-    // 能力暴露（能量输出 / 流体进料出料）
-    // ------------------------------------------------------------------
 
     /**
      * 能量能力（由 RegisterCapabilitiesEvent 注册，见主类）。
@@ -577,13 +589,13 @@ public abstract class AbstractCompactMachineTileEntity extends BlockEntity {
                 && this.level != null && !this.level.isClientSide;
     }
 
-    // ------------------------------------------------------------------
-    // NBT 持久化：委托给控制器
-    // ------------------------------------------------------------------
 
     @Override
     protected void saveAdditional(CompoundTag tag, HolderLookup.Provider registries) {
         super.saveAdditional(tag, registries);
+        var items = NonNullList.withSize(StructureInventory.SLOT_COUNT, ItemStack.EMPTY);
+        for (int i = 0; i < items.size(); ++i) items.set(i, this.getStructureInventory().getItem(i));
+        ContainerHelper.saveAllItems(tag, items, registries);
         CompoundTag controllerTag = new CompoundTag();
         saveControllerData(controllerTag, registries);
         // 控制器尚未初始化且无暂存数据时不写键，避免空数据覆盖旧存档
@@ -595,6 +607,10 @@ public abstract class AbstractCompactMachineTileEntity extends BlockEntity {
     @Override
     protected void loadAdditional(CompoundTag tag, HolderLookup.Provider registries) {
         super.loadAdditional(tag, registries);
+        var items = NonNullList.withSize(StructureInventory.SLOT_COUNT, ItemStack.EMPTY);
+        ContainerHelper.loadAllItems(tag, items, registries);
+        for (int i = 0; i < items.size(); ++i) this.getStructureInventory().setItem(i, items.get(i));
+        this.structureState = null;
         if (tag.contains(NBT_KEY_CONTROLLER)) {
             CompoundTag controllerTag = tag.getCompound(NBT_KEY_CONTROLLER);
             if (controllerTag != null && !controllerTag.isEmpty()) {
@@ -622,9 +638,6 @@ public abstract class AbstractCompactMachineTileEntity extends BlockEntity {
         }
     }
 
-    // ------------------------------------------------------------------
-    // 网络同步：方块实体变更时向客户端发送完整 NBT
-    // ------------------------------------------------------------------
 
     @Nullable
     @Override

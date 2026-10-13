@@ -14,9 +14,7 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
 
-/**
- * 压缩涡轮机方块：持有 {@link CompactTurbineTileEntity}，右键打开涡轮机 GUI。
- */
+/** 压缩涡轮机方块：持有 {@link CompactTurbineTileEntity}，右键打开涡轮机 GUI。 */
 public class CompactTurbineBlock extends CompactMachineBlock {
 
     public CompactTurbineBlock(Properties properties) {

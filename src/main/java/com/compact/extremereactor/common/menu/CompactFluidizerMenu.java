@@ -12,16 +12,7 @@ import net.minecraft.world.inventory.SimpleContainerData;
 import net.minecraft.world.item.ItemStack;
 import org.jetbrains.annotations.Nullable;
 
-/**
- * 压缩流化器容器：纯状态显示 + 开关/清空进料控制（无玩家背包槽位）。
- * 固体原料通过右键点击方块或物品能力（管道）注入。
- *
- * 数据槽布局（逻辑数据由 PackedContainerData 拆成两个 16 位槽同步）：
- *   0-2: 方块坐标 X/Y/Z  3: 能量存储  4: 能量容量
- *   5: 进料槽0物品数  6: 进料槽1物品数  7: 产物流体量(mB)  8: 产物容量(mB)
- *   9: 配方进度(0-1000)  10: 激活状态  11: 初始化失败  12: posReady 标记
- *   13: 控制器就绪标记  14: 配方模式序数  15: 进料罐0流体量  16: 进料罐1流体量
- */
+/** 无槽位的流化器状态与控制菜单；原料通过方块交互或能力输入。 */
 public class CompactFluidizerMenu extends AbstractCompactMachineMenu {
 
     public static final int DATA_POS_X = 0;
@@ -64,6 +55,7 @@ public class CompactFluidizerMenu extends AbstractCompactMachineMenu {
                                  @Nullable CompactFluidizerTileEntity tile, PackedContainerData data) {
         super(Content.COMPACT_FLUIDIZER_MENU.get(), containerId, data);
         this._tile = tile;
+        this.bindMachine(tile);
     }
 
     @Override

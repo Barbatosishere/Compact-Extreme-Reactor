@@ -16,15 +16,7 @@ import net.neoforged.neoforge.fluids.capability.templates.EmptyFluidHandler;
 import net.neoforged.neoforge.items.IItemHandler;
 import org.jetbrains.annotations.Nullable;
 
-/**
- * 压缩流化器 TileEntity：持有 {@link CompactFluidizerController} 并驱动其模拟。
- *
- * 一个方块 = 一个完整的流化器多方块：
- *   - 固体进料（2 槽）/ 流体进料（2 罐）经物品 / 流体能力输入；
- *   - 产物流体经流体能力输出（容量 = 内部体积 × 4000 mB）；
- *   - 能量通过能量能力<b>输入</b>（消费型机器，与反应堆/涡轮机相反）；
- *   - 不推送能量：仅驱动配方 tick，状态变更由控制器回调标记存档。
- */
+/** 流化器方块实体：原料与 FE 输入，产物流体输出。 */
 public class CompactFluidizerTileEntity extends AbstractCompactMachineTileEntity {
 
     public CompactFluidizerTileEntity(BlockPos pos, BlockState state) {
@@ -33,18 +25,18 @@ public class CompactFluidizerTileEntity extends AbstractCompactMachineTileEntity
 
     @Override
     protected ICompactController createController() {
+        var structure = this.getStructureState();
         // 从配置读取模拟多方块尺寸（决定输出罐容量 = 内部体积 × 4000 mB）
         return new CompactFluidizerController(this.level,
                 this.worldPosition,
                 CompactConfig.FLUIDIZER_SIZE_X.get(),
-                CompactConfig.FLUIDIZER_SIZE_Y.get(),
-                CompactConfig.FLUIDIZER_SIZE_Z.get());
+                structure.height(CompactConfig.FLUIDIZER_SIZE_Y.get()),
+                CompactConfig.FLUIDIZER_SIZE_Z.get(), structure.simulationScale());
     }
 
     @Override
     protected void onControllerInitialized(ICompactController controller) {
-        // 激活策略与涡轮机一致：读档保留存档状态；新放置默认开启
-        // （流化器无原料/无能量时配方处理自然暂停，默认开启对玩家最省事）。
+        // 新放置默认开启，读档保留存档开关状态。
         if (!this.hasPendingControllerTag()) {
             controller.setMachineActive(true);
         }
@@ -55,10 +47,10 @@ public class CompactFluidizerTileEntity extends AbstractCompactMachineTileEntity
         if (!this.canExposeRuntimeCapabilities()) {
             return;
         }
+        if (!this.prepareStructureTick()) return;
         final ICompactController controller = this._controller;
         if (controller != null) {
-            controller.tick();
-            this.setChanged();
+            this.tickController(controller);
         }
     }
 
@@ -88,13 +80,10 @@ public class CompactFluidizerTileEntity extends AbstractCompactMachineTileEntity
         return tank < 2 && !stack.isEmpty() && CompactFluidizerController.isValidFluidIngredient(stack);
     }
 
-    // ------------------------------------------------------------------
-    // 物品能力（供管道/玩家输入固体原料）
-    // ------------------------------------------------------------------
 
     /** 物品处理器实例（惰性创建）。 */
     @Nullable
-    private IItemHandler _itemHandler;
+    private CompactFluidizerItemHandler _itemHandler;
 
     /** 物品能力对象：插入/提取两个固体进料槽的原料。 */
     @Nullable
@@ -111,9 +100,9 @@ public class CompactFluidizerTileEntity extends AbstractCompactMachineTileEntity
 
     @Override
     protected void onControllerReleased() {
-        // 控制器释放后使旧物品处理器 fail-closed，防止重新挂载时旧引用连接到新控制器
-        if (this._itemHandler instanceof CompactFluidizerItemHandler fluidizerItemHandler) {
-            fluidizerItemHandler.release();
+        // 释放旧能力，防止重载后访问新控制器。
+        if (this._itemHandler != null) {
+            this._itemHandler.release();
         }
         this._itemHandler = null;
     }

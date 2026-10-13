@@ -4,13 +4,7 @@ import net.minecraft.world.inventory.ContainerData;
 
 import java.util.Arrays;
 
-/**
- * 将每个逻辑 int 拆成两个 16 位数据槽。
- *
- * <p>原版容器同步协议在线路上只安全承载有符号 short。服务端使用编码模式暴露
- * 高低 16 位，客户端使用解码模式从 {@link ContainerData#set(int, int)} 收到的槽位
- * 重建原始 int，从而避免坐标和机器大数值发生 16 位回绕。</p>
- */
+/** 将 int 拆成两个 16 位槽同步，防止坐标和大容量数值被原版 short 协议截断。 */
 final class PackedContainerData implements ContainerData {
 
     private final ContainerData _source;

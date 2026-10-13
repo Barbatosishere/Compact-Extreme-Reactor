@@ -23,6 +23,7 @@ def platform = (findProperty('platform') ?: 'neoforge') as String
 def loaderLabel = platform == 'neoforge' ? 'NeoForge' : 'Forge'
 // Stonecutter 0.8：版本子项目 projectDir = versions/<mc>，因此所有根级路径必须经 rootProject 定位
 def versionedDir = rootProject.file("versions/${mcVersion}")
+def devRunDirectory = file(findProperty('cer_run_directory') ?: 'run')
 
 version = findProperty('mod_version') ?: '1.0.0-beta17'
 group = findProperty('mod_group_id') ?: 'com.compact.extremereactor'
@@ -66,6 +67,12 @@ def configureRepositories() {
     repositories {
         repositories.clear()
         mavenLocal()
+        // 重映射工具不在 Maven Central，优先查询发布仓库。
+        maven {
+            name = 'NeoForge Installer Tools'
+            url = 'https://neoforged.forgecdn.net/releases'
+            content { includeGroup 'net.neoforged.installertools' }
+        }
         // Aliyun Maven Central 镜像排在 mavenCentral() 之前：repo1.maven.org 直连极慢，
         // 国内网络下会导致 createMinecraftArtifacts 拉依赖长时间卡住，镜像可 20MB/s 高速下载
         maven {
@@ -92,6 +99,15 @@ def configureRepositories() {
         maven {
             name = 'NeoForged MojangMeta Mirror'
             url = 'https://neoforged.forgecdn.net/mojang-meta'
+        }
+        exclusiveContent {
+            forRepository {
+                flatDir {
+                    name = 'Local Forge Mods'
+                    dirs rootProject.file('libs')
+                }
+            }
+            filter { includeGroup 'com.compact.extremereactor.local' }
         }
     }
 }
@@ -129,6 +145,7 @@ if (platform == 'neoforge') {
             }
 
             configureEach {
+                gameDirectory = devRunDirectory
                 systemProperty 'forge.logging.markers', 'REGISTRIES'
                 logLevel = org.slf4j.event.Level.DEBUG
             }
@@ -152,11 +169,15 @@ if (platform == 'neoforge') {
         }
 
         runs {
+            configureEach {
+                gameDirectory = devRunDirectory
+            }
             client {
                 client()
             }
             server {
                 server()
+                programArgument '--nogui'
             }
             data {
                 data()
@@ -177,10 +198,19 @@ if (platform == 'neoforge') {
 // ============================================================
 dependencies {
     // rootProject.file：libs/ 位于仓库根目录，而子项目 projectDir 在 versions/<mc>/
-    implementation files(
+    def reactorDependencies = files(
             rootProject.file("libs/ExtremeReactors2-${findProperty('er_version')}.jar"),
             rootProject.file("libs/ZeroCore2-${findProperty('zerocore_version')}.jar")
     )
+    if (platform == 'neoforge') {
+        implementation reactorDependencies
+    } else {
+        // LegacyForge 自动将发布版依赖从 SRG 映射到开发环境的 Mojang 名称。
+        // 普通 implementation files(...) 会跳过转换，启动时产生 NoSuchMethodError。
+        // Gradle 9 不支持插件为文件依赖生成的约束；本地模块坐标仍使用 libs/ 原始 JAR。
+        modImplementation "com.compact.extremereactor.local:ExtremeReactors2:${findProperty('er_version')}"
+        modImplementation "com.compact.extremereactor.local:ZeroCore2:${findProperty('zerocore_version')}"
+    }
     // 可选集成（Jade / JEI）：仅编译期可见，不在运行时/产物中包含
     // 运行时通过 ModList.isLoaded + 反射加载集成类，缺失时静默跳过
     if (platform == 'neoforge') {
@@ -188,24 +218,25 @@ dependencies {
         compileOnly files(rootProject.file("libs/jei-1.21.1-neoforge-19.43.0.393.jar"))
         compileOnly "org.jetbrains:annotations:24.0.0"
     } else {
-        compileOnly files(rootProject.file("libs/Jade-1.20.1-Forge-11.13.3.jar"))
-        compileOnly files(rootProject.file("libs/jei-1.20.1-forge-15.49.0.191.jar"))
+        modCompileOnly "com.compact.extremereactor.local:Jade:1.20.1-Forge-11.13.3"
+        modCompileOnly "com.compact.extremereactor.local:jei:1.20.1-forge-15.49.0.191"
     }
 }
 
-// 将本地依赖 mod 复制到 dev 运行目录的 mods 文件夹，确保开发环境中 ER/ZeroCore 被正常加载
-// 只复制当前版本对应的 jar，避免误带其他版本依赖
-tasks.register('copyLocalMods', Copy) {
-    from(rootProject.file('libs')) {
-        include "ExtremeReactors2-${findProperty('er_version')}.jar"
-        include "ZeroCore2-${findProperty('zerocore_version')}.jar"
+// ModDev 将运行时依赖直接交给加载器；Forge 必须使用其重映射后的 classpath。
+// 清理旧 copyLocalMods/手工重映射留下的已知副本，避免重复加载生产或过时依赖。
+tasks.register('prepareLocalMods') {
+    doLast {
+        ["ExtremeReactors2-${findProperty('er_version')}",
+         "ZeroCore2-${findProperty('zerocore_version')}"].each { dependencyName ->
+            delete new File(devRunDirectory, "mods/${dependencyName}.jar")
+            delete new File(devRunDirectory, "mods/${dependencyName}-deobf.jar")
+        }
     }
-    // dev 运行目录位于子项目（versions/<mc>/run），故 run/mods 相对 projectDir
-    into file('run/mods')
 }
 
 tasks.matching { it.name in ['runClient', 'runServer', 'runGameTestServer'] }.configureEach {
-    dependsOn 'copyLocalMods'
+    dependsOn 'prepareLocalMods'
 }
 
 // ============================================================

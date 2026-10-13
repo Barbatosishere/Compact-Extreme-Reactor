@@ -8,16 +8,7 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.function.Predicate;
 
-/**
- * 压缩流化器的进料流体处理器：合并两个流体进料罐（对应真实多方块的两个流体注入器）。
- *
- * <p>语义与 ER2 注入器一致：</p>
- * <ul>
- *   <li>每罐容量固定 {@code 8000 mB}（8 桶），只接受流化器配方匹配的流体；</li>
- *   <li>fill 优先补入与来料相同流体的罐，其次进入空罐；单次填充不跨罐（保留另一种原料的位置）；</li>
- *   <li>drain 恒为空：进料只进不出（产物从输出端口抽取）。</li>
- * </ul>
- */
+/** 两个 8000 mB 原料罐，只允许输入；优先填同类罐，再填一个空罐。 */
 public class CompactFluidizerInputFluidHandler implements IFluidHandler {
 
     private final FluidStackHolder _input0;
@@ -99,9 +90,7 @@ public class CompactFluidizerInputFluidHandler implements IFluidHandler {
         return FluidStack.EMPTY;
     }
 
-    // ------------------------------------------------------------------
     // 内部
-    // ------------------------------------------------------------------
 
     @Nullable
     private FluidStackHolder holderFor(int tank) {

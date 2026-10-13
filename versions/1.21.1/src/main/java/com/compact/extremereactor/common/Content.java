@@ -7,6 +7,7 @@ import com.compact.extremereactor.common.block.CompactTurbineBlock;
 import com.compact.extremereactor.common.menu.CompactFluidizerMenu;
 import com.compact.extremereactor.common.menu.CompactReactorMenu;
 import com.compact.extremereactor.common.menu.CompactTurbineMenu;
+import com.compact.extremereactor.common.menu.CompactStructureMenu;
 import com.compact.extremereactor.common.tile.CompactFluidizerTileEntity;
 import com.compact.extremereactor.common.tile.CompactReactorTileEntity;
 import com.compact.extremereactor.common.tile.CompactTurbineTileEntity;
@@ -17,7 +18,6 @@ import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.CreativeModeTab;
 import net.minecraft.world.item.Item;
-import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.neoforged.bus.api.IEventBus;
@@ -26,9 +26,7 @@ import net.neoforged.neoforge.registries.DeferredHolder;
 import net.neoforged.neoforge.registries.DeferredItem;
 import net.neoforged.neoforge.registries.DeferredRegister;
 
-/**
- * 模组注册表：方块、物品、方块实体、创造模式标签。
- */
+/** 模组注册表：方块、物品、方块实体、创造模式标签。 */
 public final class Content {
 
     private Content() {
@@ -100,4 +98,7 @@ public final class Content {
         CREATIVE_TABS.register(modEventBus);
         MENU_TYPES.register(modEventBus);
     }
+
+    public static final DeferredHolder<MenuType<?>, MenuType<CompactStructureMenu>> COMPACT_STRUCTURE_MENU =
+            MENU_TYPES.register("compact_structure", () -> new MenuType<>(CompactStructureMenu::new, FeatureFlags.VANILLA_SET));
 }

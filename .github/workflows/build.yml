@@ -1,0 +1,65 @@
+name: Build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Minecraft ${{ matrix.minecraft }}
+    runs-on: windows-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        minecraft: ['1.20.1', '1.21.1']
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Java 17 toolchain
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install Java 21 for Gradle
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Check regression script syntax
+        shell: pwsh
+        run: |
+          bash -n tools/soak-test.sh
+          if ($LASTEXITCODE -ne 0) { throw 'Invalid soak-test.sh syntax' }
+          $tokens = $null
+          $parseErrors = $null
+          [void][System.Management.Automation.Language.Parser]::ParseFile(
+              (Join-Path $PWD 'tools/rcon-client.ps1'), [ref]$tokens, [ref]$parseErrors)
+          if ($parseErrors.Count) { throw ($parseErrors | Out-String) }
+      - name: Build and prepare development server
+        shell: pwsh
+        run: >-
+          .\gradlew.bat :${{ matrix.minecraft }}:build
+          :${{ matrix.minecraft }}:prepareServerRun
+          --no-daemon --no-parallel --console=plain
+          '-Dorg.gradle.jvmargs=-Xmx4G -Djava.net.preferIPv4Stack=true'
+      - name: Verify distributable JAR
+        shell: pwsh
+        run: |
+          $artifacts = @(Get-ChildItem 'versions/${{ matrix.minecraft }}/build/libs' -Filter '*.jar')
+          if ($artifacts.Count -ne 1) { throw 'Expected one distributable JAR' }
+          python tools/verify_artifact.py $artifacts[0].FullName --minecraft-version '${{ matrix.minecraft }}'
+          if ($LASTEXITCODE -ne 0) { throw 'Artifact verification failed' }
+      - name: Upload JAR
+        uses: actions/upload-artifact@v4
+        with:
+          name: compactextremereactor-${{ matrix.minecraft }}
+          path: versions/${{ matrix.minecraft }}/build/libs/*.jar
+          if-no-files-found: error
