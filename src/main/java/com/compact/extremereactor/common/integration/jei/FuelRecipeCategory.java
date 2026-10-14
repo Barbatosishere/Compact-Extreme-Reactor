@@ -12,12 +12,7 @@ import mezz.jei.api.recipe.category.IRecipeCategory;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.ItemStack;
 
-/**
- * JEI 配方类别：压缩反应堆燃料→废物反应。
- *
- * 显示：输入端（燃料物品）→ 箭头 → 输出端（废物物品）
- * 下方显示反应性和裂变率数值。
- */
+/** JEI 燃料到废物配方，附反应性与裂变率。 */
 public class FuelRecipeCategory implements IRecipeCategory<FuelRecipe> {
 
     private static final int WIDTH = 140;
@@ -57,27 +52,21 @@ public class FuelRecipeCategory implements IRecipeCategory<FuelRecipe> {
 
     @Override
     public void setRecipe(IRecipeLayoutBuilder builder, FuelRecipe recipe, IFocusGroup focuses) {
-        // 输入槽：燃料物品
         builder.addSlot(RecipeIngredientRole.INPUT, 18, 10)
                 .addItemStack(recipe.input());
 
-        // 输出槽：废物物品
         builder.addSlot(RecipeIngredientRole.OUTPUT, 94, 10)
                 .addItemStack(recipe.output());
     }
 
     @Override
-    public void createRecipeExtras(IRecipeExtrasBuilder builder, FuelRecipe recipe,
-                                   IFocusGroup focuses) {
-        // 箭头：输入 → 输出
+    public void createRecipeExtras(IRecipeExtrasBuilder builder, FuelRecipe recipe, IFocusGroup focuses) {
         builder.addRecipeArrow().setPosition(56, 10);
 
-        // 反应性
         builder.addText(Component.translatable("jei.compactextremereactor.reactivity",
                 String.format("%.2f", recipe.reactivity())),
                 18, 35);
 
-        // 裂变率
         builder.addText(Component.translatable("jei.compactextremereactor.fission_rate",
                 String.format("%.4f", recipe.fissionRate())),
                 18, 45);

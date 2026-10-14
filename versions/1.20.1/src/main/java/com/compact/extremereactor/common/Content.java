@@ -7,6 +7,7 @@ import com.compact.extremereactor.common.block.CompactTurbineBlock;
 import com.compact.extremereactor.common.menu.CompactFluidizerMenu;
 import com.compact.extremereactor.common.menu.CompactReactorMenu;
 import com.compact.extremereactor.common.menu.CompactTurbineMenu;
+import com.compact.extremereactor.common.menu.CompactStructureMenu;
 import com.compact.extremereactor.common.tile.CompactFluidizerTileEntity;
 import com.compact.extremereactor.common.tile.CompactReactorTileEntity;
 import com.compact.extremereactor.common.tile.CompactTurbineTileEntity;
@@ -26,9 +27,7 @@ import net.minecraftforge.registries.DeferredRegister;
 import net.minecraftforge.registries.ForgeRegistries;
 import net.minecraftforge.registries.RegistryObject;
 
-/**
- * 模组注册表：方块、物品、方块实体、创造模式标签、菜单类型。
- */
+/** 模组注册表：方块、物品、方块实体、创造模式标签、菜单类型。 */
 public final class Content {
 
     private Content() {
@@ -101,4 +100,7 @@ public final class Content {
         CREATIVE_TABS.register(modEventBus);
         MENU_TYPES.register(modEventBus);
     }
+
+    public static final RegistryObject<MenuType<CompactStructureMenu>> COMPACT_STRUCTURE_MENU =
+            MENU_TYPES.register("compact_structure", () -> new MenuType<>(CompactStructureMenu::new, FeatureFlags.VANILLA_SET));
 }

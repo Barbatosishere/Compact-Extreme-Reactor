@@ -5,12 +5,7 @@ import net.minecraftforge.fluids.capability.IFluidHandler;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-/**
- * 组合流体处理器：把一个机器的输入端和输出端合并为两个逻辑槽位。
- *
- * <p>tank 0 是输入，tank 1 是输出；两者共享同一个 ER FluidContainer 的底层容量，
- * 并不是两个相互独立的储罐。fill/drain 仍按操作方向路由到对应端点。</p>
- */
+/** 合并输入和输出端点；槽位依次映射到输入和输出处理器。 */
 public class MachineFluidHandler implements IFluidHandler {
 
     private final IFluidHandler _input;

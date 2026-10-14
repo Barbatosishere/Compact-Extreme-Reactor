@@ -1,0 +1,13 @@
+gradle.beforeProject { target ->
+    if (target.name in ['1.20.1', '1.21.1']) {
+        target.afterEvaluate {
+            def probe = target.sourceSets.create('structureProbe')
+            probe.java.srcDir target.rootProject.file('tools/validation/structure/shared')
+            probe.java.srcDir target.rootProject.file("tools/validation/structure/${target.name}/java")
+            probe.resources.srcDir target.rootProject.file("tools/validation/structure/${target.name}/resources")
+            probe.compileClasspath += target.sourceSets.main.output + target.sourceSets.main.compileClasspath
+            def extension = target.extensions.getByName(target.name == '1.20.1' ? 'legacyForge' : 'neoForge')
+            extension.mods.register('cerstructure') { sourceSet probe }
+        }
+    }
+}

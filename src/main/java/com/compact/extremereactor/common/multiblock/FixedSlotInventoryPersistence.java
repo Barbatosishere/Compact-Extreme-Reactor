@@ -9,15 +9,6 @@ public final class FixedSlotInventoryPersistence {
     private FixedSlotInventoryPersistence() {
     }
 
-    public static CompoundTag withSlots(CompoundTag tag, String inventoryKey, int slots) {
-        if (!needsNormalization(tag, inventoryKey, slots)) {
-            return tag;
-        }
-        final CompoundTag restored = tag.copy();
-        normalizeInPlace(restored, inventoryKey, slots);
-        return restored;
-    }
-
     static boolean needsNormalization(CompoundTag tag, String inventoryKey, int slots) {
         if (!tag.contains(inventoryKey)) {
             return false;

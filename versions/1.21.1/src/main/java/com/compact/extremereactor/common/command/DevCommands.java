@@ -48,16 +48,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.Optional;
 
-/**
- * 开发环境专用诊断指令（{@code /cerdev}）。仅在非生产环境注册
- * （{@code !FMLEnvironment.production}），生产 jar 不含此指令的注册路径。
- *
- * 用途：在无流体管道 mod 的 dev 环境里验证水→蒸汽链路——
- *   - fill/drain 走与真实管道完全相同的 {@code level.getCapability(FluidHandler)} 路径；
- *   - dump 反射读取 ER 内部 FluidContainer 与冷却剂注册表解析结果，
- *     用于定位汽化链路在哪一环被阻断。
- * 需要 op 权限 2（RCON 默认 level 4 可用）。
- */
+/** 开发环境的能力、存档与生产链路诊断；仅开发模式注册，要求权限 2。 */
 public final class DevCommands {
 
     private DevCommands() {
@@ -207,9 +198,7 @@ public final class DevCommands {
         CompactExtremeReactor.LOGGER.info("cerdev 诊断指令已注册（仅开发环境）");
     }
 
-    // ------------------------------------------------------------------
     // 子命令实现
-    // ------------------------------------------------------------------
 
     /** fuel：走真实物品能力路径插入燃料（与管道/漏斗完全一致）。 */
     private static int devFuel(CommandSourceStack source, BlockPos pos, ResourceLocation itemId, int count) {
@@ -1154,9 +1143,7 @@ public final class DevCommands {
         return passed;
     }
 
-    // ------------------------------------------------------------------
     // dump：汽化链路逐环诊断
-    // ------------------------------------------------------------------
 
     private static int devDump(CommandSourceStack source, BlockPos pos) {
         final ServerLevel level = source.getLevel();
@@ -1464,9 +1451,7 @@ public final class DevCommands {
         return 1;
     }
 
-    // ------------------------------------------------------------------
     // 工具
-    // ------------------------------------------------------------------
 
     /** 世界侧流体能力（与真实管道完全相同的查询路径）。 */
     private static IFluidHandler fluidHandler(Level level, BlockPos pos) {

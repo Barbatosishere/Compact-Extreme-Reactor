@@ -11,13 +11,7 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.function.IntSupplier;
 
-/**
- * 直接代理 ER 内部 FluidContainer 的单向流体端点。
- *
- * <p>压缩机器没有真实 FluidPort，因此不使用 ER 的受限端口 handler。每个实例只代表一个
- * 严格的 Liquid 或 Gas 端点：输入端只接受 fill，输出端只允许从目标类型 drain。底层
- * ZeroCore stack 重载负责完整 FluidStack 内容匹配（Forge NBT/NeoForge components）。</p>
- */
+/** 无实体 FluidPort 时直接访问容器；每个实例只处理指定的 Liquid 或 Gas 输入/输出端点。 */
 public class BypassFluidHandler implements IFluidHandler {
 
     private final FluidContainer _container;
@@ -28,16 +22,6 @@ public class BypassFluidHandler implements IFluidHandler {
     private volatile Runnable _dirtyCallback;
     private volatile boolean _released;
 
-    public BypassFluidHandler(FluidContainer container, boolean isInput, IntSupplier capacity) {
-        this(container, isInput, capacity, null, isInput ? FluidType.Liquid : FluidType.Gas);
-    }
-
-    public BypassFluidHandler(FluidContainer container, boolean isInput, IntSupplier capacity,
-                              @Nullable Runnable dirtyCallback) {
-        this(container, isInput, capacity, dirtyCallback,
-                isInput ? FluidType.Liquid : FluidType.Gas);
-    }
-
     /** 创建严格绑定到指定 Liquid/Gas 端点的 handler。 */
     public BypassFluidHandler(FluidContainer container, boolean isInput, IntSupplier capacity,
                               @Nullable Runnable dirtyCallback, FluidType target) {
@@ -46,19 +30,6 @@ public class BypassFluidHandler implements IFluidHandler {
         this._capacity = capacity;
         this._dirtyCallback = dirtyCallback;
         this._target = target;
-    }
-
-    /**
-     * 兼容旧调用方：输入使用 fillTarget，输出使用 drainTarget；两个参数不能再表达 fallback
-     * 优先级，最终只会选择一个严格目标端点。
-     */
-    public BypassFluidHandler(FluidContainer container, boolean isInput, IntSupplier capacity,
-                              @Nullable Runnable dirtyCallback,
-                              @Nullable FluidType fillTarget, @Nullable FluidType drainTarget) {
-        this(container, isInput, capacity, dirtyCallback,
-                isInput
-                        ? (fillTarget == null ? FluidType.Liquid : fillTarget)
-                        : (drainTarget == null ? FluidType.Gas : drainTarget));
     }
 
     /** 更新流体变化回调，避免缓存 handler 捕获失效的 TileEntity 回调。 */

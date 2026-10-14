@@ -1,0 +1,13 @@
+modLoader="javafml"
+loaderVersion="[2,)"
+license="MIT"
+[[mods]]
+modId="cerstructure"
+version="1.0.0"
+displayName="CER Structure Validation"
+[[dependencies.cerstructure]]
+modId="compactextremereactor"
+type="required"
+versionRange="[1,)"
+ordering="AFTER"
+side="BOTH"

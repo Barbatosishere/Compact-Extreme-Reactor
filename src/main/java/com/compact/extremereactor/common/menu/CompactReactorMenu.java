@@ -12,15 +12,7 @@ import net.minecraft.world.inventory.SimpleContainerData;
 import net.minecraft.world.item.ItemStack;
 import org.jetbrains.annotations.Nullable;
 
-/**
- * 压缩极限反应堆容器：纯状态显示 + 控制棒调节（无燃料槽/玩家背包）。
- * 燃料通过右键点击方块直接注入。
- *
- * 数据槽布局（逻辑数据由 PackedContainerData 拆成两个 16 位槽同步）：
- *   0-2: 方块坐标 X/Y/Z  3: 能量存储  4: 能量容量  5: 燃料量  6: 废物量
- *   7: 燃料容量  8: 控制棒插入比例  9: 激活状态  10: 发电量  11: 初始化失败
- *   12: 堆芯温度  13: posReady 标记  14: 控制器就绪标记
- */
+/** 无槽位的反应堆状态与控制菜单；整数数据由 PackedContainerData 拆分同步。 */
 public class CompactReactorMenu extends AbstractCompactMachineMenu {
 
     public static final int DATA_POS_X = 0;
@@ -63,6 +55,7 @@ public class CompactReactorMenu extends AbstractCompactMachineMenu {
                                @Nullable CompactReactorTileEntity tile, PackedContainerData data) {
         super(Content.COMPACT_REACTOR_MENU.get(), containerId, data);
         this._tile = tile;
+        this.bindMachine(tile);
     }
 
     @Override

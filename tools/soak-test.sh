@@ -7,18 +7,31 @@
 #   I4  反应堆：蒸汽增量 == 0.85 × 实际消耗水量（±200）且蒸汽增量 ≤ 消耗水量
 #   I5  容量钳制：任何时刻罐内容量不越界（由 fill 接受量间接验证）
 #   I6  废液隔离：蒸汽罐空时 drain(int) 不得抽出废液；drain(FluidStack) 守恒
-# 前提：服务器已启动且 RCON 25575 可用；测试机器位于 2950/2954/2974 @ y=100 z=2950。
+# 前提：NeoForge 开发服务器已启动并启用 RCON；机器布局及初始状态见 README。
 cd "$(dirname "$0")/.." || exit 1
 set -eE -o pipefail
 shopt -s inherit_errexit
 trap 'echo "FAIL: test aborted at line $LINENO" >&2' ERR
+
+CER_RCON_HOST="${CER_RCON_HOST:-127.0.0.1}"
+CER_RCON_PORT="${CER_RCON_PORT:-25575}"
+: "${CER_RCON_PASSWORD:?Set CER_RCON_PASSWORD to your test server RCON password}"
+[[ -f tools/rcon-client.ps1 ]] || { echo 'Missing tools/rcon-client.ps1' >&2; exit 1; }
+if command -v powershell.exe > /dev/null; then
+    CER_POWERSHELL=powershell.exe
+elif command -v pwsh > /dev/null; then
+    CER_POWERSHELL=pwsh
+else
+    echo 'PowerShell is required for tools/rcon-client.ps1' >&2
+    exit 1
+fi
 
 RCON() {
     local command="$1"
     local attempt response status
     for attempt in 1 2 3; do
         status=0
-        response="$(powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/rcon-client.ps1 25575 cer 127.0.0.1 "$command" | tr -d '\r')" || status=$?
+        response="$("$CER_POWERSHELL" -NoProfile -ExecutionPolicy Bypass -File tools/rcon-client.ps1 "$CER_RCON_PORT" "$CER_RCON_PASSWORD" "$CER_RCON_HOST" "$command" | tr -d '\r')" || status=$?
         response="$(printf '%s\n' "$response" | sed '/^> /d')"
         if [[ "$response" == *"RCON_ERROR:"* && "$response" == *"Connect"* ]]; then
             sleep 0.5
@@ -26,6 +39,7 @@ RCON() {
         fi
         if [[ "$status" == 0 && -n "$response" && "$response" != *"RCON_ERROR:"* && "$response" != *"NO_RESPONSE:"* && "$response" != *"AUTH_FAILED:"* ]]; then
             case "$command" in
+                cerstress\ *) [[ "$response" == CERSTRESS\ * ]] || break ;;
                 cerdev\ *) [[ "$response" == *"[cerdev] "* ]] || break ;;
                 setblock\ *) [[ "$response" == *"Changed the block at "* ]] || break ;;
                 forceload\ add\ *) [[ "$response" == *"Marked chunk "* || "$response" == *"Marked chunks "* ]] || break ;;
@@ -119,6 +133,8 @@ RCON "setblock 2974 100 2950 air" > /dev/null
 sleep 1
 RCON "setblock 2974 100 2950 compactextremereactor:compact_turbine" > /dev/null
 sleep 2
+RCON "cerstress install 2974 100 2950" > /dev/null
+sleep 2
 check "P2 新建蒸汽" 0 "$(TANK "$SPARE" 0)"
 check "P2 新建水" 0 "$(TANK "$SPARE" 1)"
 fill_response="$(RCON "cerdev fill $SPARE bigreactors:steam 20000")" || exit 1
@@ -133,6 +149,8 @@ check "P2 排空后水" 0 "$(TANK "$SPARE" 1)"
 RCON "setblock 2974 100 2950 air" > /dev/null
 sleep 1
 RCON "setblock 2974 100 2950 compactextremereactor:compact_turbine" > /dev/null
+sleep 2
+RCON "cerstress install 2974 100 2950" > /dev/null
 sleep 2
 check "P2 重建后蒸汽" 0 "$(TANK "$SPARE" 0)"
 check "P2 重建后水" 0 "$(TANK "$SPARE" 1)"
@@ -201,7 +219,12 @@ for i in $(seq 1 10); do
     ACC="$(FILL_ACCEPTED "$fill_response")"
     [[ "$ACC" =~ ^[0-9]+$ ]] || { echo "  FAIL  P5 无法解析 fill 响应: $fill_response"; exit 1; }
     RCON "cerdev active $REAC true" > /dev/null
-    sleep 8
+    # Keep FE below capacity for the whole observation window. A single
+    # extraction at the start lets the reactor refill before it can process water.
+    for tick in $(seq 1 8); do
+        sleep 1
+        RCON "cerdev energy $REAC extract 1000000" > /dev/null
+    done
     RCON "cerdev active $REAC false" > /dev/null
     G1="$(TANK "$REAC" 1)"; W1="$(TANK "$REAC" 0)"
     RCON "cerdev drain $REAC 200000" > /dev/null
@@ -241,15 +264,18 @@ RCON "cerdev waste $REAC inject 2000" > /dev/null
 sleep 1
 W2="$(FIELD "$REAC" 'waste')"
 WASTE_TYPE="$(FIELD "$REAC" 'wasteReactant')"
-if [[ ! "$W2" =~ ^[0-9]+$ || "$W2" -lt 1000 || "$WASTE_TYPE" == '-' ]]; then
+if [[ ! "$W2" =~ ^[0-9]+$ || "$W2" -le 0 || "$WASTE_TYPE" == '-' ]]; then
     FAIL=$((FAIL+1))
     echo "  FAIL  P7 废物注入后前置状态异常: waste=$W2 wasteReactant=$WASTE_TYPE"
 elif [[ "$WASTE_TYPE" == 'cyanite' || "$WASTE_TYPE" == 'bigreactors:cyanite' ]]; then
-    TYP="$(RCON "cerdev drain $REAC 1000 bigreactors:cyanite")"
+    # Fuel and waste share capacity; a full reactor can reject the diagnostic
+    # injection. Validate typed draining against the waste that is available.
+    REQUEST=$((W2 < 1000 ? W2 : 1000))
+    TYP="$(RCON "cerdev drain $REAC $REQUEST bigreactors:cyanite")"
     echo "  typed: $(echo "$TYP" | grep '^\[cerdev\]')"
     W3="$(FIELD "$REAC" 'waste')"
-    check "P7 类型 drain 返回 cyanite 1000" "ok" "$(echo "$TYP" | grep -q 'cyanite x1000' && echo ok || echo bad)"
-    check "P7 类型 drain 1000 后 waste" "$((W2 - 1000))" "$W3"
+    check "P7 类型 drain 返回 cyanite $REQUEST" "ok" "$(echo "$TYP" | grep -q "cyanite x$REQUEST mB" && echo ok || echo bad)"
+    check "P7 类型 drain $REQUEST 后 waste" "$((W2 - REQUEST))" "$W3"
 else
     echo "  SKIP  P7 当前废物为 $WASTE_TYPE，非 cyanite"
     SKIP=$((SKIP+1))

@@ -9,14 +9,7 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.function.Supplier;
 
-/**
- * 将 ZeroCore 的 {@link IWideEnergyStorage2}（ER 控制器）适配为 Forge 的
- * {@link IEnergyStorage} 能力，供能量线缆 / 相邻机器提取功率。
- *
- * 压缩机器是发电机：只允许提取（extract），不接受输入（receive）。
- * 注意 IEnergyStorage 以 int 为单位，ER 内部是 64 位 WideAmount，
- * 超出 int 范围的部分会被截断（实际游戏中单个方块能量容量远小于 2^31 的极少见）。
- */
+/** 将 WideAmount 适配为整数 FE 输出；返回值钳制到 int 范围。 */
 public class CompactEnergyStorage implements IEnergyStorage {
 
     private final Supplier<? extends IWideEnergyStorage2> _delegate;
@@ -26,9 +19,7 @@ public class CompactEnergyStorage implements IEnergyStorage {
         this(() -> delegate);
     }
 
-    /**
-     * 延迟解析控制器，避免能力查询在区块加载等嵌套路径中同步初始化控制器。
-     */
+    /** 延迟解析控制器，避免能力查询在区块加载等嵌套路径中同步初始化控制器。 */
     public CompactEnergyStorage(Supplier<? extends IWideEnergyStorage2> delegate) {
         this._delegate = delegate;
     }
@@ -39,7 +30,7 @@ public class CompactEnergyStorage implements IEnergyStorage {
     }
 
     @Nullable
-    private IWideEnergyStorage2 delegate() {
+    protected IWideEnergyStorage2 delegate() {
         return this._released ? null : this._delegate.get();
     }
 
@@ -48,19 +39,13 @@ public class CompactEnergyStorage implements IEnergyStorage {
         return this._released;
     }
 
-    /** 子类访问延迟解析的控制器委托。 */
-    @Nullable
-    protected IWideEnergyStorage2 delegateForSubclass() {
-        return this.delegate();
-    }
-
     protected static int clampToInt(long amount) {
         return amount <= 0 ? 0 : amount > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) amount;
     }
 
     @Override
     public int receiveEnergy(int maxReceive, boolean simulate) {
-        // 发电机不接受能量输入
+
         return 0;
     }
 

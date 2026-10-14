@@ -38,6 +38,8 @@ it/
 Thumbs.db
 Desktop.ini
 *.class
+__pycache__/
+*.py[cod]
 
 # 注意：libs/ 下的 ER/ZeroCore 本地 jar 依赖必须提交，
 # 否则克隆仓库后无法编译（官方 Maven 不可达，见 build.gradle）

@@ -11,15 +11,7 @@ import net.minecraft.world.inventory.SimpleContainerData;
 import net.minecraft.world.item.ItemStack;
 import org.jetbrains.annotations.Nullable;
 
-/**
- * 压缩涡轮机容器：无槽位，纯状态显示（无玩家背包）。
- * 蒸汽通过流体能力输入（玩家可用流体管道灌入），本容器只负责显示。
- *
- * 数据槽布局（逻辑数据由 PackedContainerData 拆成两个 16 位槽同步）：
- *   0-2: 方块坐标 X/Y/Z  3: 能量存储  4: 能量容量  5: 蒸汽量  6: 水量
- *   7: 流体总容量  8: 发电量  9: 初始化失败  10: 转子转速
- *   11: posReady 标记  12: 控制器就绪标记
- */
+/** 无槽位的涡轮状态菜单；整数数据由 PackedContainerData 拆分同步。 */
 public class CompactTurbineMenu extends AbstractCompactMachineMenu {
 
     public static final int DATA_POS_X = 0;
@@ -59,6 +51,7 @@ public class CompactTurbineMenu extends AbstractCompactMachineMenu {
                                @Nullable CompactTurbineTileEntity tile, PackedContainerData data) {
         super(Content.COMPACT_TURBINE_MENU.get(), containerId, data);
         this._tile = tile;
+        this.bindMachine(tile);
     }
 
     @Override

@@ -7,13 +7,7 @@ import it.zerono.mods.zerocore.lib.energy.IWideEnergyStorage2;
 
 import java.util.function.Supplier;
 
-/**
- * 能量输入端（消费型机器）：把外部 FE 注入 ER 控制器的能量缓冲。
- *
- * <p>与 {@link CompactEnergyStorage}（发电机，只出不进）相反：本适配器只接受输入，
- * 不允许提取。用于压缩流化器（{@code insertEnergy} 委托至 ER 能量缓冲，
- * {@code extractEnergy} 恒为 0，由控制器语义保证 fail-closed）。</p>
- */
+/** 流化器的 FE 输入适配器，禁止外部提取。 */
 public class CompactEnergySink extends CompactEnergyStorage {
 
     public CompactEnergySink(IWideEnergyStorage2 delegate) {
@@ -30,7 +24,7 @@ public class CompactEnergySink extends CompactEnergyStorage {
         if (this.isReleased() || maxReceive <= 0) {
             return 0;
         }
-        final IWideEnergyStorage2 delegate = this.delegateForSubclass();
+        final IWideEnergyStorage2 delegate = this.delegate();
         if (delegate == null) {
             return 0;
         }

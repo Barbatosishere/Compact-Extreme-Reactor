@@ -12,16 +12,11 @@ public final class GeneratorEnergyPersistence {
     }
 
     public static CompoundTag withCapacity(CompoundTag tag, WideAmount capacity, Function<WideAmount, Tag> serialize) {
-        return withCapacity(tag, "buffer", capacity, serialize);
-    }
-
-    public static CompoundTag withCapacity(CompoundTag tag, String bufferKey, WideAmount capacity,
-                                            Function<WideAmount, Tag> serialize) {
-        if (!tag.contains(bufferKey)) {
+        if (!tag.contains("buffer")) {
             return tag;
         }
         final CompoundTag restored = tag.copy();
-        normalizeInPlace(restored, bufferKey, capacity, serialize);
+        normalizeInPlace(restored, "buffer", capacity, serialize);
         return restored;
     }
 

@@ -36,7 +36,6 @@ import it.zerono.mods.zerocore.lib.recipe.result.RecipeResultTargetWrapper;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.neoforged.neoforge.fluids.FluidStack;
@@ -48,41 +47,19 @@ import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 
-/**
- * 压缩流化器控制器：在单个方块内完整模拟一个 Extreme Reactors 流化器（Fluidizer）多方块。
- *
- * <p>与 {@link CompactReactorController}/{@link CompactTurbineController} 不同，本类<b>不继承</b>
- * ER2 的 {@code MultiblockFluidizer}：其 {@code onMachineAssembled()} 在注入器部件数量为 0 时
- * 直接抛出 {@code IllegalStateException}（压缩机器没有真实注入器部件），且其核心状态
- * （能量缓冲、输出罐、配方持有器）全部为私有字段无法复用。因此改为继承 ZeroCore 的
- * {@link AbstractCuboidMultiblockController} 骨架，复用 ER2 <b>公开</b>的配方体系：</p>
- *
- * <ul>
- *   <li>配方查找：{@code Content.Recipes.FLUIDIZER_RECIPE_TYPE}（与 ER2 同源数据包配方）；</li>
- *   <li>配方实例：{@code FluidizerSolidRecipe / FluidizerSolidMixingRecipe / FluidizerFluidMixingRecipe}
- *       及其公开的 {@code HeldRecipe}（消费/产出逻辑与 ER2 完全一致）；</li>
- *   <li>配方进度：ZeroCore {@link RecipeHolder}（tick 计数、能耗回调、NBT 同步）；</li>
- *   <li>进料/产出：{@link RecipeIngredientSourceWrapper} 与 {@link RecipeResultTargetWrapper}。</li>
- * </ul>
- *
- * <p>三种配方模式（对应真实多方块的注入器布局，压缩机器按当前原料动态选择）：</p>
- * <ul>
- *   <li>{@code Solid}（40 tick）：单一固体进料槽 → 流体；</li>
- *   <li>{@code SolidMixing}（80 tick）：两个固体进料槽混合 → 流体；</li>
- *   <li>{@code FluidMixing}（80 tick）：两个流体进料罐混合 → 流体。</li>
- * </ul>
- *
- * <p>能耗：每 tick 消耗 {@code Config.COMMON.fluidizer.energyPerRecipeTick} FE × 倍率
- * （倍率 = ceil(结果流体量 / 1000)，与 ER2 公式一致）；能量不足时进度清零并暂停（不耗电）。</p>
- */
+/** 复用 ER 配方和 ZeroCore RecipeHolder；原生流化器要求实体注入器，不能直接装配。 */
 public class CompactFluidizerController
         extends AbstractCuboidMultiblockController<CompactFluidizerController>
         implements ICompactController, IActivableMachine {
+    private java.util.function.BooleanSupplier structureReady = () -> true;
 
-    /** FE 缓冲容量：与 ER2 MultiblockFluidizer.ENERGY_CAPACITY 一致（固定 50k）。 */
+    @Override
+    public void setStructureReady(java.util.function.BooleanSupplier ready) {
+        this.structureReady = ready;
+    }
+
+    /** 默认基准容量；实际容量由配置和已装入组件计算。 */
     public static final WideAmount ENERGY_CAPACITY = WideAmount.asImmutable(50_000);
-
-    private static final WideAmount ENERGY_TRANSFER_LIMIT = WideAmount.asImmutable(1000);
 
     /** 流体进料罐容量（mB）：与 ER2 FluidizerFluidInjectorEntity.MAX_CAPACITY 一致（8 桶）。 */
     public static final int FLUID_INPUT_CAPACITY = 8_000;
@@ -117,9 +94,13 @@ public class CompactFluidizerController
     private static final String NBT_RECIPE_FLUID_MIXING = "rt_fluidmixing";
 
     private final BlockPos _anchor;
+    private final double processingScale;
+    private double processingBudget;
     private final CuboidBoundingBox _cachedBoundingBox;
 
     private final WideEnergyBuffer _energyBuffer;
+    private final WideAmount energyCapacity;
+    private final WideAmount energyTransfer;
     private WideAmount _cachedRecipeEnergyCost = WideAmount.ZERO;
     private final FluidTank _outputTank;
     private final IFluidHandler _outputFluidHandler;
@@ -154,13 +135,23 @@ public class CompactFluidizerController
 
     @SuppressWarnings("unchecked")
     public CompactFluidizerController(Level level, BlockPos anchor, int sizeX, int sizeY, int sizeZ) {
+        this(level, anchor, sizeX, sizeY, sizeZ, 1.0);
+    }
+
+    @SuppressWarnings("unchecked")
+    public CompactFluidizerController(Level level, BlockPos anchor, int sizeX, int sizeY, int sizeZ, double scale) {
         super(level);
 
         this._anchor = anchor.immutable();
+        this.processingScale = Math.max(1, Math.min(16, scale));
         this._cachedBoundingBox = new CuboidBoundingBox(this._anchor,
                 this._anchor.offset(sizeX - 1, sizeY - 1, sizeZ - 1));
 
-        this._energyBuffer = new WideEnergyBuffer(EnergySystem.ForgeEnergy, ENERGY_CAPACITY, ENERGY_TRANSFER_LIMIT);
+        this.energyCapacity = WideAmount.asImmutable((long) Math.ceil(
+                com.compact.extremereactor.common.config.CompactConfig.FLUIDIZER_ENERGY_CAPACITY.get() * this.processingScale));
+        this.energyTransfer = WideAmount.asImmutable((long) Math.ceil(
+                com.compact.extremereactor.common.config.CompactConfig.FLUIDIZER_ENERGY_TRANSFER.get() * this.processingScale));
+        this._energyBuffer = new WideEnergyBuffer(EnergySystem.ForgeEnergy, this.energyCapacity, this.energyTransfer);
 
         // 输出罐容量 = 内部体积 × 4000 mB，与 ER2 onMachineAssembled 公式一致（9x9x9 → 7³×4000 = 1,372,000 mB）
         final int interior = Math.max(1, (sizeX - 2)) * Math.max(1, (sizeY - 2)) * Math.max(1, (sizeZ - 2));
@@ -184,19 +175,19 @@ public class CompactFluidizerController
                 CompactFluidizerController::isValidFluidIngredient);
 
         this._solidHolder = RecipeHolder.builder(this::solidRecipeFactory, recipe -> recipe.getRecipeType().getTicks())
-                .onHasIngredientsChanged(() -> this.consumeIngredientsChanged())
+                .onHasIngredientsChanged(this::consumeIngredientsChanged)
                 .onCanProcess(this::canProcessRecipe)
                 .onRecipeChanged(recipe -> this.markChanged())
                 .onRecipeTickProcessed(this::onRecipeTickProcessed)
                 .build();
         this._solidMixingHolder = RecipeHolder.builder(this::solidMixingRecipeFactory, recipe -> recipe.getRecipeType().getTicks())
-                .onHasIngredientsChanged(() -> this.consumeIngredientsChanged())
+                .onHasIngredientsChanged(this::consumeIngredientsChanged)
                 .onCanProcess(this::canProcessRecipe)
                 .onRecipeChanged(recipe -> this.markChanged())
                 .onRecipeTickProcessed(this::onRecipeTickProcessed)
                 .build();
         this._fluidMixingHolder = RecipeHolder.builder(this::fluidMixingRecipeFactory, recipe -> recipe.getRecipeType().getTicks())
-                .onHasIngredientsChanged(() -> this.consumeIngredientsChanged())
+                .onHasIngredientsChanged(this::consumeIngredientsChanged)
                 .onCanProcess(this::canProcessRecipe)
                 .onRecipeChanged(recipe -> this.markChanged())
                 .onRecipeTickProcessed(this::onRecipeTickProcessed)
@@ -207,9 +198,6 @@ public class CompactFluidizerController
         this._recipes = Content.Recipes.FLUIDIZER_RECIPE_TYPE.get().getRecipes();
     }
 
-    // ------------------------------------------------------------------
-    // 公开查询（菜单 / Jade / 诊断指令）
-    // ------------------------------------------------------------------
 
     public RecipeMode getRecipeMode() {
         return this._mode;
@@ -283,14 +271,7 @@ public class CompactFluidizerController
         this.markChanged();
     }
 
-    /** 固体进料槽容量上限（用于 GUI/管道校验展示）。 */
-    public int getItemSlotCapacity(int slot) {
-        return slot >= 0 && slot < 2 ? this._itemInputs.getSlotLimit(slot) : 0;
-    }
-
-    // ------------------------------------------------------------------
     // 原料校验（静态：管道/方块右键在控制器初始化前也可调用）
-    // ------------------------------------------------------------------
 
     /** 物品是否可作为流化器进料（Solid 或 SolidMixing 配方匹配，忽略数量）。 */
     public static boolean isValidSolidIngredient(ItemStack stack) {
@@ -313,9 +294,6 @@ public class CompactFluidizerController
         ).isPresent();
     }
 
-    // ------------------------------------------------------------------
-    // 模拟装配与 tick
-    // ------------------------------------------------------------------
 
     /** 模拟多方块"装配"：触发基类装配回调并按当前原料确定配方模式。 */
     @Override
@@ -327,6 +305,7 @@ public class CompactFluidizerController
     /** 每个服务端游戏刻驱动一次流化器逻辑（模式重算 + 配方处理）。 */
     @Override
     public void tick() {
+        if (!this.structureReady.getAsBoolean()) return;
         final List<ModRecipe> recipes = Content.Recipes.FLUIDIZER_RECIPE_TYPE.get().getRecipes();
         if (recipes != this._recipes) {
             if (!recipes.equals(this._recipes)) {
@@ -342,7 +321,10 @@ public class CompactFluidizerController
             this.updateMode();
         }
         if (this.isMachineActive()) {
-            this.processActiveHolder();
+            this.processingBudget += this.processingScale;
+            int steps = Math.min(16, (int) this.processingBudget);
+            this.processingBudget -= steps;
+            for (int step = 0; step < steps; ++step) this.processActiveHolder();
         }
     }
 
@@ -409,9 +391,6 @@ public class CompactFluidizerController
         return holder.getCurrentRecipe().map(IHeldRecipe::getCurrentTick).orElse(-1);
     }
 
-    // ------------------------------------------------------------------
-    // 配方工厂与回调（RecipeHolder 绑定）
-    // ------------------------------------------------------------------
 
     private IHeldRecipe<FluidizerSolidRecipe> solidRecipeFactory(IRecipeHolder<FluidizerSolidRecipe> holder) {
         // 消费原料变化标志（与 ER2 工厂一致）：之后持有器持有新配方直到原料再次变化
@@ -494,9 +473,6 @@ public class CompactFluidizerController
         this.markChanged();
     }
 
-    // ------------------------------------------------------------------
-    // 进料变化监听
-    // ------------------------------------------------------------------
 
     private void onInputsChanged(IStackHolder.ChangeType changeType, int slot) {
         if (this.calledByLogicalServer()) {
@@ -506,10 +482,6 @@ public class CompactFluidizerController
             }
             this.markChanged();
         }
-    }
-
-    private void onFluidInputsChanged(IStackHolder.ChangeType changeType, int slot) {
-        this.onInputsChanged(changeType, slot);
     }
 
     private void onOutputTankChanged(IStackHolder.ChangeType changeType, int index) {
@@ -529,13 +501,10 @@ public class CompactFluidizerController
     private FluidStackHolder createFluidInput() {
         final FluidStackHolder holder = new FluidStackHolder(1, ($, stack) -> isValidFluidIngredient(stack));
         holder.setMaxCapacity(FLUID_INPUT_CAPACITY);
-        holder.setOnContentsChangedListener(this::onFluidInputsChanged);
+        holder.setOnContentsChangedListener(this::onInputsChanged);
         return holder;
     }
 
-    // ------------------------------------------------------------------
-    // ICompactController / IWideEnergyStorage2
-    // ------------------------------------------------------------------
 
     @Override
     public void setMachineActive(boolean active) {
@@ -550,11 +519,7 @@ public class CompactFluidizerController
         return this._active;
     }
 
-    /**
-     * 流化器是能量消费方："满仓"是正常待机而非停机状态。
-     * 覆写为 false 避免GUI/Jade 显示与消费型机器无关的"能量已满"三态。
-     * （流化器的暂停条件是"能量不足"，由配方处理逻辑内部处理。）
-     */
+    /** 流化器按配方所需能量暂停，满仓仍可消耗 FE。 */
     @Override
     public boolean isEnergyBufferFull() {
         return false;
@@ -562,7 +527,7 @@ public class CompactFluidizerController
 
     @Override
     public WideAmount insertEnergy(EnergySystem system, WideAmount maxAmount, OperationMode mode) {
-        if (this._energyBuffer.getEnergyStored().greaterOrEqual(ENERGY_CAPACITY)) {
+        if (this._energyBuffer.getEnergyStored().greaterOrEqual(this.energyCapacity)) {
             return WideAmount.ZERO;
         }
         final WideAmount inserted = this._energyBuffer.insertEnergy(system, maxAmount, mode);
@@ -617,13 +582,12 @@ public class CompactFluidizerController
         return null;
     }
 
-    // ------------------------------------------------------------------
-    // NBT 持久化
-    // ------------------------------------------------------------------
 
     @Override
     public void syncDataFrom(CompoundTag tag, HolderLookup.Provider registries, ISyncableEntity.SyncReason reason) {
         super.syncDataFrom(tag, registries, reason);
+        double budget = tag.getDouble("cer:processingBudget");
+        this.processingBudget = Double.isFinite(budget) && budget >= 0 && budget < 1 ? budget : 0;
 
         final boolean copyTag = tag.contains(NBT_ENERGY)
                 || FixedSlotInventoryPersistence.needsNormalization(tag, NBT_ITEMS, 2)
@@ -631,7 +595,7 @@ public class CompactFluidizerController
                 || FixedSlotInventoryPersistence.needsNormalization(tag, NBT_FLUID_IN_1, 1);
         CompoundTag restoredTag = copyTag ? tag.copy() : tag;
         if (copyTag) {
-            GeneratorEnergyPersistence.normalizeInPlace(restoredTag, NBT_ENERGY, ENERGY_CAPACITY,
+            GeneratorEnergyPersistence.normalizeInPlace(restoredTag, NBT_ENERGY, this.energyCapacity,
                     WideAmount::serializeToNBT);
             FixedSlotInventoryPersistence.normalizeInPlace(restoredTag, NBT_ITEMS, 2);
             FixedSlotInventoryPersistence.normalizeInPlace(restoredTag, NBT_FLUID_IN_0, 1);
@@ -641,7 +605,7 @@ public class CompactFluidizerController
         this.syncBooleanElementFrom(NBT_ACTIVE, restoredTag, registries, active -> this._active = active);
         this.syncChildDataEntityFrom(this._energyBuffer, NBT_ENERGY,
                 restoredTag, registries, reason);
-        this._energyBuffer.setMaxTransfer(ENERGY_TRANSFER_LIMIT);
+        this._energyBuffer.setMaxTransfer(this.energyTransfer);
         if (restoredTag.contains(NBT_OUTPUT)) {
             final CompoundTag outputTag = copyTag
                     ? restoredTag.getCompound(NBT_OUTPUT)
@@ -658,7 +622,7 @@ public class CompactFluidizerController
 
         this._recipes = Content.Recipes.FLUIDIZER_RECIPE_TYPE.get().getRecipes();
         this.updateMode();
-        // 先确定模式，再 refresh 和恢复进度，避免首个 tick 切换模式时清除刚读入的进度。
+        // 先确定模式再恢复进度，防止首个 tick 的模式切换清零进度。
         this._solidHolder.refresh();
         this.syncChildDataEntityFrom(this._solidHolder, NBT_RECIPE_SOLID, restoredTag, registries, reason);
         this._solidMixingHolder.refresh();
@@ -672,6 +636,7 @@ public class CompactFluidizerController
     @Override
     public CompoundTag syncDataTo(CompoundTag tag, HolderLookup.Provider registries, ISyncableEntity.SyncReason reason) {
         tag = super.syncDataTo(tag, registries, reason);
+        tag.putDouble("cer:processingBudget", this.processingBudget);
 
         this.syncBooleanElementTo(NBT_ACTIVE, tag, registries, this.isMachineActive());
         this.syncChildDataEntityTo(this._energyBuffer, NBT_ENERGY, tag, registries, reason);
@@ -686,9 +651,7 @@ public class CompactFluidizerController
         return tag;
     }
 
-    // ------------------------------------------------------------------
     // 多方块"谎报"区（压缩机器没有真实部件，框架状态固定为已装配）
-    // ------------------------------------------------------------------
 
     @Override
     public boolean isEmpty() {
@@ -741,9 +704,7 @@ public class CompactFluidizerController
                 maxRemapper.apply(this.getBoundingBox().getMax()));
     }
 
-    // ------------------------------------------------------------------
     // AbstractMultiblockController 抽象方法（无部件骨架桩）
-    // ------------------------------------------------------------------
 
     @Override
     protected void onPartAdded(IMultiblockPart<CompactFluidizerController> newPart) {
@@ -837,9 +798,7 @@ public class CompactFluidizerController
         return false;
     }
 
-    // ------------------------------------------------------------------
     // 内部状态
-    // ------------------------------------------------------------------
 
     private boolean _active;
 }

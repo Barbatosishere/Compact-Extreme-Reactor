@@ -25,7 +25,8 @@ public final class ClientHandler {
         event.enqueueWork(() -> {
             MenuScreens.register(Content.COMPACT_REACTOR_MENU.get(), CompactReactorScreen::new);
             MenuScreens.register(Content.COMPACT_TURBINE_MENU.get(), CompactTurbineScreen::new);
-            MenuScreens.register(Content.COMPACT_FLUIDIZER_MENU.get(), CompactFluidizerScreen::new);
+           MenuScreens.register(Content.COMPACT_FLUIDIZER_MENU.get(), CompactFluidizerScreen::new);
+            MenuScreens.register(Content.COMPACT_STRUCTURE_MENU.get(), com.compact.extremereactor.client.screen.CompactStructureScreen::new);
         });
     }
 }

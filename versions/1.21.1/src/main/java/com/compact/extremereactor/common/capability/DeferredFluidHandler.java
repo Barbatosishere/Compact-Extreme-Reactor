@@ -8,10 +8,7 @@ import org.jetbrains.annotations.Nullable;
 import java.util.function.BiPredicate;
 import java.util.function.Supplier;
 
-/**
- * 稳定的流体能力代理：在控制器尚未于顶层服务端 tick 初始化时，不触发初始化，
- * 但仍保留正确的逻辑槽数量和静态输入过滤；控制器准备好后自动转发到真实 handler。
- */
+/** 控制器就绪前保留槽位和输入过滤，就绪后转发操作；能力查询不触发同步装配。 */
 public final class DeferredFluidHandler implements IFluidHandler {
 
     private final Supplier<? extends IFluidHandler> _delegate;
@@ -68,7 +65,7 @@ public final class DeferredFluidHandler implements IFluidHandler {
         }
         final IFluidHandler delegate = this.delegate();
         return delegate == null
-                ? !this._released && tank >= 0 && tank < this._pendingTanks
+                ? !this._released && tank < this._pendingTanks
                         && this._pendingValidator.test(tank, stack)
                 : delegate.isFluidValid(tank, stack);
     }

@@ -9,14 +9,7 @@ import snownee.jade.api.IWailaCommonRegistration;
 import snownee.jade.api.IWailaPlugin;
 import snownee.jade.api.WailaPlugin;
 
-/**
- * Jade HUD 集成。
- *
- * <p>防御：Jade 编译时使用 1.21 端 15.x 版的 API；玩家若装旧版 Jade 12-14，
- * 运行时 {@code registerBlockDataProvider} 签名变化会抛 {@code NoSuchMethodError}。
- * 整个 register 方法 try/catch 兜底，记录 WARN 后不传播，模组主功能（GUI/NBT 持久化）
- * 仍可用。</p>
- */
+/** 注册 Jade HUD；API 不兼容时记录警告并禁用对应集成。 */
 @WailaPlugin
 public class CompactMachineJadePlugin implements IWailaPlugin {
 

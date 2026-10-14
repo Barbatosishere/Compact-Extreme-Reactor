@@ -5,20 +5,14 @@ import com.compact.extremereactor.common.multiblock.CompactFluidizerController;
 import com.compact.extremereactor.common.network.ModPackets;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
-import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.player.Inventory;
 import net.neoforged.neoforge.network.PacketDistributor;
 
-/**
- * 压缩流化器 GUI：显示配方模式/进度、进料（物品/流体）、产物与能量缓冲，
- * 并提供机器开关与清空进料按钮。
- *
- * 玩家操作通过 {@link ModPackets} 的 C2S 数据包发送到服务端。
- */
-public class CompactFluidizerScreen extends AbstractContainerScreen<CompactFluidizerMenu> {
+/** 流化器状态显示及开关、清空原料操作。 */
+public class CompactFluidizerScreen extends CompactMachineScreen<CompactFluidizerMenu> {
 
     private static final ResourceLocation TEXTURE = ResourceLocation.fromNamespaceAndPath(
             "compactextremereactor", "textures/gui/compact_fluidizer.png");
@@ -28,8 +22,6 @@ public class CompactFluidizerScreen extends AbstractContainerScreen<CompactFluid
 
     public CompactFluidizerScreen(CompactFluidizerMenu menu, Inventory playerInventory, Component title) {
         super(menu, playerInventory, title);
-        this.imageWidth = 320;
-        this.imageHeight = 180;
     }
 
     @Override
@@ -70,10 +62,6 @@ public class CompactFluidizerScreen extends AbstractContainerScreen<CompactFluid
         PacketDistributor.sendToServer(new ModPackets.MachineActionPayload(pos, action));
     }
 
-    // ------------------------------------------------------------------
-    // 绘制
-    // ------------------------------------------------------------------
-
     @Override
     protected void renderBg(GuiGraphics guiGraphics, float partialTick, int mouseX, int mouseY) {
         guiGraphics.blit(
@@ -94,26 +82,6 @@ public class CompactFluidizerScreen extends AbstractContainerScreen<CompactFluid
                 this.menu.getData(CompactFluidizerMenu.DATA_ENERGY_CAPACITY), 0xFFE7B95B);
     }
 
-    private void renderVerticalBar(GuiGraphics g, int x, int y, int width, int height, int value, int capacity, int color) {
-        g.fill(x, y, x + width, y + height, 0xFF52616C);
-        g.fill(x + 1, y + 1, x + width - 1, y + height - 1, 0xFF0D151D);
-        if (capacity > 0 && value > 0) {
-            int filled = Math.min(height - 2, (int) ((long) (height - 2) * value / capacity));
-            g.fill(x + 1, y + height - 1 - filled, x + width - 1, y + height - 1, color);
-        }
-        g.fill(x + 1, y + 1, x + width - 1, y + 2, 0x66FFFFFF);
-    }
-
-    private void renderHorizontalBar(GuiGraphics g, int x, int y, int width, int height, int value, int capacity, int color) {
-        g.fill(x, y, x + width, y + height, 0xFF52616C);
-        g.fill(x + 1, y + 1, x + width - 1, y + height - 1, 0xFF0D151D);
-        if (capacity > 0 && value > 0) {
-            int filled = Math.min(width - 2, (int) ((long) (width - 2) * value / capacity));
-            g.fill(x + 1, y + 1, x + 1 + filled, y + height - 1, color);
-        }
-        g.fill(x + 1, y + 1, x + width - 1, y + 2, 0x66FFFFFF);
-    }
-
     @Override
     protected void renderLabels(GuiGraphics guiGraphics, int mouseX, int mouseY) {
         if (this.menu.getData(CompactFluidizerMenu.DATA_INIT_FAILED) == 1) {
@@ -130,7 +98,8 @@ public class CompactFluidizerScreen extends AbstractContainerScreen<CompactFluid
         this.drawFit(guiGraphics, Component.translatable("gui.compactextremereactor.fluidizer_mode",
                 Component.translatable("gui.compactextremereactor.fluidizer_mode_" + mode.name().toLowerCase())), 14, 14, 150, 0xFFFFFFFF);
         final boolean active = this.menu.getData(CompactFluidizerMenu.DATA_ACTIVE) == 1;
-        this.drawFit(guiGraphics, Component.translatable(active
+        this.drawFit(guiGraphics, Component.translatable(!this.menu.isStructureReady()
+                        ? "gui.compactextremereactor.structure_incomplete" : active
                         ? "gui.compactextremereactor.status_on" : "gui.compactextremereactor.status_off"),
                 174, 14, 112, active ? 0xFF70D6A0 : 0xFFFF6B6B);
         this.drawFit(guiGraphics, Component.translatable("gui.compactextremereactor.energy",
@@ -150,9 +119,5 @@ public class CompactFluidizerScreen extends AbstractContainerScreen<CompactFluid
         this.drawFit(guiGraphics, Component.translatable("gui.compactextremereactor.fluidizer_output",
                 this.menu.getData(CompactFluidizerMenu.DATA_OUTPUT_MB),
                 this.menu.getData(CompactFluidizerMenu.DATA_OUTPUT_CAPACITY_MB)), 14, 148, 272, 0xFF70D6A0);
-    }
-
-    private void drawFit(GuiGraphics guiGraphics, Component text, int x, int y, int maxWidth, int color) {
-        guiGraphics.drawString(this.font, this.font.plainSubstrByWidth(text.getString(), maxWidth), x, y, color);
     }
 }

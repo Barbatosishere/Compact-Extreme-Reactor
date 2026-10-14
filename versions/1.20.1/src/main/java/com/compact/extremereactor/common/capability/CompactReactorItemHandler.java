@@ -15,16 +15,7 @@ import org.jetbrains.annotations.Nullable;
 import java.util.List;
 import java.util.Optional;
 
-/**
- * 反应堆物品能力：允许管道接入燃料输入与废物输出。
- *
- * 槽位布局：
- *  - 槽 0：燃料输入（插入燃料物品 → 注入反应堆）
- *  - 槽 1：废物输出（废物 Reactant → 反向映射为物品提取）
- *
- * 燃料/废物以 Reactant 流体形式存储于控制器，无内部物品堆。
- * 槽 1 的 {@link #getStackInSlot(int)} 返回废物物品预览堆，供管道探测。
- */
+/** 槽 0 输入燃料，槽 1 从废物 Reactant 提取映射物品；显示槽使用预览堆。 */
 public class CompactReactorItemHandler implements IItemHandler {
 
     private static final int SLOT_FUEL_IN = 0;

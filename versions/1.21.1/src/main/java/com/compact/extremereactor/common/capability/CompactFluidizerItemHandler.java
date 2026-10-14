@@ -8,13 +8,7 @@ import net.neoforged.neoforge.items.IItemHandler;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-/**
- * 压缩流化器物品能力：两个固体进料槽（对应真实多方块的两个固体注入器）。
- *
- * <p>槽位语义与 ER2 注入器一致：只接受流化器配方匹配的物品（Solid / SolidMixing），
- * 插入与提取均允许（玩家/管道可以取回放错的原料）。底层存储是控制器内的
- * {@link ItemStackHolder}，本类只做 fail-closed 包装（控制器释放后拒绝一切访问）。</p>
- */
+/** 两个固体原料槽的物品能力；控制器释放后旧引用拒绝访问。 */
 public class CompactFluidizerItemHandler implements IItemHandler {
 
     private final CompactFluidizerTileEntity _tile;
