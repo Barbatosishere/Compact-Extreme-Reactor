@@ -116,10 +116,10 @@ public class CompactReactorController extends MultiblockReactor implements IComp
         this._sizeY = (int) Math.ceil((sizeY - 2) * scale) + 2;
         this._sizeZ = sizeZ;
         this._cachedBoundingBox = new CuboidBoundingBox(this._anchor, this._anchor.offset(sizeX - 1, this._sizeY - 1, sizeZ - 1));
-        int exterior = sizeX * sizeY * sizeZ - (sizeX - 2) * (sizeY - 2) * (sizeZ - 2);
+        int exterior = sizeX * this._sizeY * sizeZ - (sizeX - 2) * (this._sizeY - 2) * (sizeZ - 2);
         long baselineFluid = Math.min((long) exterior * this.getVariant().getPartFluidCapacity(), this.getVariant().getMaxFluidCapacity());
-        this.fluidCapacity = (int) Math.min(Integer.MAX_VALUE, Math.ceil(baselineFluid * scale));
-        this.partCount = (int) Math.ceil((double) sizeX * sizeY * sizeZ * scale);
+        this.fluidCapacity = (int) Math.min(Integer.MAX_VALUE, baselineFluid);
+        this.partCount = (int) Math.min(Integer.MAX_VALUE, (long) sizeX * this._sizeY * sizeZ);
         this._irradiationSource = new SimulatedIrradiationSource(() -> this._controlRodInsertionRatio, this._anchor);
     }
 
@@ -127,7 +127,9 @@ public class CompactReactorController extends MultiblockReactor implements IComp
     /** 模拟多方块"装配"：触发真实装配回调，初始化能量/燃料/流体容量。 */
     public void simulateAssembly() {
         this.onMachineAssembled();
-        ((FluidContainer) this.getFluidContainer()).setCapacity(this.fluidCapacity);
+        if (this.getFluidContainer() instanceof FluidContainer container) {
+            container.setCapacity(this.fluidCapacity);
+        }
         // 上游缓冲默认禁止插入；允许写入被动等效 FE。
         this.getEnergyBuffer().setMaxInsert(WideAmount.MAX_VALUE);
         // 无实体部件时须设置真实锚点，供 ZeroCore 的区块加载检查使用。
@@ -138,19 +140,20 @@ public class CompactReactorController extends MultiblockReactor implements IComp
     /** 无实体 FluidPort 时经能力直接访问容器；停机也允许外部输入和抽取。 */
     @Override
     public Optional<IFluidHandler> getFluidHandler(IoDirection direction) {
+        if (!(this.getFluidContainer() instanceof FluidContainer container)) {
+            return Optional.empty();
+        }
 
         if (direction == IoDirection.Input) {
             if (this._cachedInputHandler == null) {
-                final FluidContainer container = (FluidContainer) this.getFluidContainer();
                 this._cachedInputHandler = new BypassFluidHandler(container, true, container::getCapacity,
                         this._fluidDirtyCallback, FluidType.Liquid);
             }
             return Optional.of(this._cachedInputHandler);
         }
         if (this._cachedOutputHandler == null) {
-            final FluidContainer container = (FluidContainer) this.getFluidContainer();
             this._cachedOutputHandler = new BypassFluidHandler(container, false, container::getCapacity,
-                        this._fluidDirtyCallback, FluidType.Gas);
+                    this._fluidDirtyCallback, FluidType.Gas);
         }
         return Optional.of(this._cachedOutputHandler);
     }

@@ -46,6 +46,7 @@ public final class StructureInventory extends SimpleContainer {
                         drop.grow(count);
                         stack.shrink(count);
                     }
+                    break;
                 }
             }
             while (!stack.isEmpty()) drops.add(stack.split(Math.max(1, stack.getMaxStackSize())));

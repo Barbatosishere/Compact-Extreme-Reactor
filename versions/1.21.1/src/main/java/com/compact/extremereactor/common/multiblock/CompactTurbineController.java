@@ -95,10 +95,10 @@ public class CompactTurbineController extends MultiblockTurbine implements IComp
         this._sizeY = (int) Math.ceil((sizeY - 2) * scale) + 2;
         this._sizeZ = sizeZ;
         this._cachedBoundingBox = new CuboidBoundingBox(this._anchor, this._anchor.offset(sizeX - 1, this._sizeY - 1, sizeZ - 1));
-        int exterior = sizeX * sizeY * sizeZ - (sizeX - 2) * (sizeY - 2) * (sizeZ - 2);
+        int exterior = sizeX * this._sizeY * sizeZ - (sizeX - 2) * (this._sizeY - 2) * (sizeZ - 2);
         long baselineFluid = Math.min((long) exterior * this.getVariant().getPartFluidCapacity(), this.getVariant().getMaxFluidCapacity());
-        this.fluidCapacity = (int) Math.min(Integer.MAX_VALUE, Math.ceil(baselineFluid * scale));
-        this.partCount = (int) Math.ceil((double) sizeX * sizeY * sizeZ * scale);
+        this.fluidCapacity = (int) Math.min(Integer.MAX_VALUE, baselineFluid);
+        this.partCount = (int) Math.min(Integer.MAX_VALUE, (long) sizeX * this._sizeY * sizeZ);
         this._coilRadius = coilRadius;
     }
 
@@ -106,7 +106,9 @@ public class CompactTurbineController extends MultiblockTurbine implements IComp
     /** 初始化容量，并从模拟转子布局计算叶片、质量和线圈参数。 */
     public void simulateAssembly() {
         this.onMachineAssembled();
-        ((FluidContainer) this.getFluidContainer()).setCapacity(this.fluidCapacity);
+        if (this.getFluidContainer() instanceof FluidContainer container) {
+            container.setCapacity(this.fluidCapacity);
+        }
         // 打开能量缓冲的插入限制，使 TurbineLogic 的发电量可以写入（与反应堆控制器一致）
         this.getEnergyBuffer().setMaxInsert(WideAmount.MAX_VALUE);
         // 接合感应线圈：压缩涡轮机无控制棒，模拟内建稳压装置，始终发电
@@ -172,20 +174,21 @@ public class CompactTurbineController extends MultiblockTurbine implements IComp
     /** 无实体 FluidPort 时直接输入蒸汽、输出冷凝水，停机仍可访问。 */
     @Override
     public Optional<IFluidHandler> getFluidHandler(IoDirection direction) {
+        if (!(this.getFluidContainer() instanceof FluidContainer container)) {
+            return Optional.empty();
+        }
         // 缓存 BypassFluidHandler：FluidContainer 引用稳定，缓存后 fill/drain 内部状态可复用
         if (direction == IoDirection.Input) {
             if (this._cachedInputHandler == null) {
-                final FluidContainer container = (FluidContainer) this.getFluidContainer();
                 // 涡轮输入必须走蒸汽槽。
                 this._cachedInputHandler = new BypassFluidHandler(container, true, container::getCapacity,
-                        this._fluidDirtyCallback, FluidType.Gas);
+                    this._fluidDirtyCallback, FluidType.Gas);
             }
             return Optional.of(this._cachedInputHandler);
         }
         if (this._cachedOutputHandler == null) {
-            final FluidContainer container = (FluidContainer) this.getFluidContainer();
             this._cachedOutputHandler = new BypassFluidHandler(container, false, container::getCapacity,
-                        this._fluidDirtyCallback, FluidType.Liquid);
+                    this._fluidDirtyCallback, FluidType.Liquid);
         }
         return Optional.of(this._cachedOutputHandler);
     }

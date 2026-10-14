@@ -82,7 +82,7 @@ public abstract class AbstractCompactMachineTileEntity extends BlockEntity {
             this.onControllerReleased();
             this.invalidateCaps();
             TICKING_MACHINES.remove(this);
-            this.reviveCaps();
+            super.reviveCaps();
             this.enqueuePendingInit();
             return false;
         }
