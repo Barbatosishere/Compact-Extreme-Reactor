@@ -48,6 +48,7 @@ jobs:
         run: >-
           .\gradlew.bat :${{ matrix.minecraft }}:build
           :${{ matrix.minecraft }}:prepareServerRun
+          -Pcer_use_mirrors=false
           --no-daemon --no-parallel --console=plain
           '-Dorg.gradle.jvmargs=-Xmx4G -Djava.net.preferIPv4Stack=true'
       - name: Verify distributable JAR

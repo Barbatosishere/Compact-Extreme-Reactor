@@ -75,7 +75,7 @@ The project uses Stonecutter to share a single build script across both versions
 
 Artifacts are at `versions/<mc>/build/libs/compactextremereactor-<version>-<Loader>-<mc>.jar` (e.g. `compactextremereactor-1.0.0-beta4-Forge-1.20.1.jar` / `compactextremereactor-1.0.0-beta4-NeoForge-1.21.1.jar`) — drop the one for your loader into your `mods/` folder.
 
-> 💡 If dependency downloads fail on a flaky network, IPv4-first is already enabled in `gradle.properties` (`-Djava.net.preferIPv4Stack=true`) and a reachable mirror (`neoforged.forgecdn.net`, BMCLAPI) is configured as fallback in `build.gradle`.
+> 💡 Builds use the official dependency repositories by default. If your local network requires mirrors, add `-Pcer_use_mirrors=true` to use Aliyun, ForgeCDN and BMCLAPI instead. GitHub Actions explicitly uses `-Pcer_use_mirrors=false` so mirror outages do not affect CI. IPv4-first is enabled in `gradle.properties` (`-Djava.net.preferIPv4Stack=true`).
 
 Development runs use `.\gradlew.bat :1.20.1:runServer` or `:1.21.1:runServer` (replace `runServer` with `runClient` for a client). LegacyForge automatically remaps the local 1.20.1 production dependencies to Mojang names; no manual JAR conversion is needed. ER and ZeroCore load from the runtime classpath. Launch tasks remove only their known legacy copies from `run/mods` to avoid duplicate dependencies.
 
