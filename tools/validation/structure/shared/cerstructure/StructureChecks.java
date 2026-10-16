@@ -46,6 +46,7 @@ public final class StructureChecks {
             check("reactor balanced coupling", StructureState.calculate(StructureKind.REACTOR,
                     new int[]{40, 20, 5}, new int[]{8, 4, 1}, new int[]{3125, 6250, 25000}).scaleUnits() == 200000);
             check("bounded scale", StructureState.calculate(new int[]{256}, new int[]{1}, new int[]{100000}).scaleUnits() == 1600000);
+            generatorFluidCapacities(level);
             for (StructureKind kind : StructureKind.values()) {
                 machine(level, kind);
                 structureDrops(level, kind);
@@ -226,6 +227,44 @@ public final class StructureChecks {
         }
     }
 
+    private static ICompactController generator(ServerLevel level, StructureKind kind, int size, double scale) {
+        BlockPos anchor = new BlockPos(10000, 100, 10000);
+        ICompactController controller = kind == StructureKind.REACTOR
+                ? new CompactReactorController(level, anchor, 1, 1, 1, size, size, size, scale)
+                : new CompactTurbineController(level, anchor, 1, size, size, size, scale);
+        controller.simulateAssembly();
+        return controller;
+    }
+
+    private static int generatorFluidLimit(ICompactController controller) {
+        return controller instanceof CompactReactorController reactor
+                ? reactor.getVariant().getMaxFluidCapacity()
+                : ((CompactTurbineController) controller).getVariant().getMaxFluidCapacity();
+    }
+
+    private static void generatorFluidCapacities(ServerLevel level) {
+        for (StructureKind kind : List.of(StructureKind.REACTOR, StructureKind.TURBINE)) {
+            String prefix = kind.key() + ": ";
+            var small = generator(level, kind, 3, 1);
+            int partCapacity = small instanceof CompactReactorController reactor
+                    ? reactor.getVariant().getPartFluidCapacity()
+                    : ((CompactTurbineController) small).getVariant().getPartFluidCapacity();
+            int limit = generatorFluidLimit(small);
+            int initial = small.getFluidContainer().getCapacity();
+            int expanded = generator(level, kind, 3, 2).getFluidContainer().getCapacity();
+            // A 3x3x3 shell has 26 parts; extending it to 3x4x3 adds eight, not another end cap.
+            check(prefix + "small structure fluid capacity", initial == Math.min(26L * partCapacity, limit));
+            check(prefix + "fluid capacity grows below variant limit",
+                    expanded > initial && expanded == Math.min(34L * partCapacity, limit));
+            check(prefix + "fractional fluid expansion rounds height up",
+                    generator(level, kind, 3, 1.25).getFluidContainer().getCapacity() == expanded);
+            // At 1600%, a 9x9x9 shell becomes 9x114x9: 3746 exterior parts.
+            check(prefix + "large structure fluid capacity respects variant limit",
+                    generator(level, kind, 9, 16).getFluidContainer().getCapacity()
+                            == Math.min(3746L * partCapacity, limit));
+        }
+    }
+
     private static void machine(ServerLevel level, StructureKind kind) throws Exception {
         String prefix = kind.key() + ": ";
         BlockPos pos = new BlockPos(10000 + kind.ordinal(), 100, 10000);
@@ -262,7 +301,12 @@ public final class StructureChecks {
         int newFluidCapacity = kind == StructureKind.FLUIDIZER
                 ? ((CompactFluidizerController) upgraded).getOutputTank().getCapacity()
                 : upgraded.getFluidContainer().getCapacity();
-        check(prefix + "fluid capacity increased", newFluidCapacity >= fluidCapacity * 2);
+        if (kind == StructureKind.FLUIDIZER) {
+            check(prefix + "fluid capacity increased", newFluidCapacity >= fluidCapacity * 2);
+        } else {
+            check(prefix + "fluid capacity grows within variant limit",
+                    newFluidCapacity >= fluidCapacity && newFluidCapacity <= generatorFluidLimit(upgraded));
+        }
         details.put(prefix + "capacities", List.of(fluidCapacity, newFluidCapacity));
         check(prefix + "energy capacity", upgraded.getCapacity(EnergySystem.ForgeEnergy).longValue() > energyCapacity);
         long request = kind == StructureKind.FLUIDIZER ? 40000 : energyCapacity + 1000;
