@@ -75,7 +75,7 @@
 
 构建产物位于 `versions/<mc>/build/libs/compactextremereactor-<版本>-<Loader>-<MC版本>.jar`（如 `compactextremereactor-1.0.0-beta4-Forge-1.20.1.jar` / `compactextremereactor-1.0.0-beta4-NeoForge-1.21.1.jar`），按对应 loader 放入 `mods/` 目录即可。
 
-> 💡 如果网络环境不佳导致依赖下载失败，`gradle.properties` 已配置 IPv4 优先（`-Djava.net.preferIPv4Stack=true`），且 `build.gradle` 内置了可达镜像（`neoforged.forgecdn.net`、BMCLAPI）作为兜底。
+> 💡 构建默认使用官方依赖仓库。如果本地网络需要镜像，可追加 `-Pcer_use_mirrors=true`，改用 Aliyun、ForgeCDN 和 BMCLAPI。GitHub Actions 显式使用 `-Pcer_use_mirrors=false`，避免镜像故障影响 CI。`gradle.properties` 已配置 IPv4 优先（`-Djava.net.preferIPv4Stack=true`）。
 
 开发启动使用 `.\gradlew.bat :1.20.1:runServer` 或 `:1.21.1:runServer`，客户端将任务名改为 `runClient`。LegacyForge 会将本地 1.20.1 生产依赖自动重映射为开发环境的 Mojang 名称，无需手工转换 JAR。ER 和 ZeroCore 从运行时 classpath 加载；启动任务只清理 `run/mods` 中这两个依赖已知的旧副本，避免重复加载。
 

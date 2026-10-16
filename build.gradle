@@ -58,47 +58,13 @@ repositories {
 // 数据生成输出（与资源合并进 jar）
 sourceSets.main.resources.srcDir 'src/generated/resources'
 
-// 重配仓库：moddev/legacyforge apply 时会自动添加官方仓库（maven.neoforged.net、
-// libraries.minecraft.net）。官方源优先（代理可直连），不可达的域名用镜像兜底：
-//   bmclapi2.bangbang93.com = libraries.minecraft.net 镜像（该域名代理不可达，必须走镜像）
-//   neoforged.forgecdn.net = maven.neoforged.net / mojang-meta 的同步镜像
-// 注意：libraries.minecraft.net 即使开代理也无法访问，BMCLAPI 镜像不可移除
+// 保留 ModDev 提供的官方仓库及其内容/元数据过滤规则。
+// 受限网络可显式使用 -Pcer_use_mirrors=true；CI 固定使用官方源。
 def configureRepositories() {
     repositories {
-        repositories.clear()
-        mavenLocal()
-        // 重映射工具不在 Maven Central，优先查询发布仓库。
-        maven {
-            name = 'NeoForge Installer Tools'
-            url = 'https://neoforged.forgecdn.net/releases'
-            content { includeGroup 'net.neoforged.installertools' }
-        }
-        // Aliyun Maven Central 镜像排在 mavenCentral() 之前：repo1.maven.org 直连极慢，
-        // 国内网络下会导致 createMinecraftArtifacts 拉依赖长时间卡住，镜像可 20MB/s 高速下载
-        maven {
-            name = 'Aliyun Maven Central Mirror'
-            url = 'https://maven.aliyun.com/repository/central'
-        }
-        mavenCentral()
-        // ForgeCDN 镜像优先：maven.neoforged.net 直连 SSL 握手不稳定，国内环境经常 Connection reset，
-        // neoforged.forgecdn.net 是 neoforged.net 的同步镜像，国内可直连，能完全覆盖官方仓库内容
-        maven {
-            name = 'NeoForged Mirror'
-            url = 'https://neoforged.forgecdn.net/releases'
-        }
-        // 注意：maven.neoforged.net 官方仓库在国内环境 SSL 连接会被重置（SocketException），
-        // 每次失败要重试多次造成构建长时间卡住，故不加入仓库列表，全部走 forgecdn.net 镜像
         maven {
             name = 'MinecraftForge'
             url = 'https://maven.minecraftforge.net/'
-        }
-        maven {
-            name = 'BMCLAPI Minecraft Libraries'
-            url = 'https://bmclapi2.bangbang93.com/maven'
-        }
-        maven {
-            name = 'NeoForged MojangMeta Mirror'
-            url = 'https://neoforged.forgecdn.net/mojang-meta'
         }
         exclusiveContent {
             forRepository {
@@ -108,6 +74,21 @@ def configureRepositories() {
                 }
             }
             filter { includeGroup 'com.compact.extremereactor.local' }
+        }
+    }
+
+    if (providers.gradleProperty('cer_use_mirrors').getOrElse('false').toBoolean()) {
+        def mirrors = [
+                'https://libraries.minecraft.net': 'https://bmclapi2.bangbang93.com/maven',
+                'https://maven.neoforged.net/releases': 'https://neoforged.forgecdn.net/releases',
+                'https://maven.neoforged.net/mojang-meta': 'https://neoforged.forgecdn.net/mojang-meta',
+                'https://repo.maven.apache.org/maven2': 'https://maven.aliyun.com/repository/central'
+        ]
+        repositories.withType(MavenArtifactRepository).configureEach { repo ->
+            def mirror = mirrors[repo.url.toString().replaceAll('/+$', '')]
+            if (mirror != null) {
+                repo.url = uri(mirror)
+            }
         }
     }
 }
@@ -307,22 +288,5 @@ idea {
     module {
         downloadSources = true
         downloadJavadoc = true
-    }
-}
-
-// ============================================================
-// 国内网络修复：NeoGradle 插件在 afterEvaluate 阶段自动追加
-// maven.neoforged.net 官方仓库，但该域名在国内 SSL 连接经常被重置
-// （Connection reset），每次失败重试 8 次，导致每个依赖都卡住 10+ 秒。
-// 这里在 afterEvaluate 中将其移除，依赖全部走 forgecdn.net 镜像。
-// ============================================================
-gradle.projectsLoaded { g ->
-    g.allprojects { p ->
-        p.afterEvaluate {
-            p.repositories.removeIf { repo ->
-                repo instanceof MavenArtifactRepository &&
-                repo.url.toString().contains('maven.neoforged.net')
-            }
-        }
     }
 }
