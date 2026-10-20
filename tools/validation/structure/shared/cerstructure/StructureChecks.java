@@ -52,6 +52,7 @@ public final class StructureChecks {
                 structureDrops(level, kind);
             }
             energyTransfers(level);
+            BoundaryChecks.run(level, StructureChecks::check, details);
         } catch (Throwable failure) {
             error = failure.toString();
             failure.printStackTrace();
