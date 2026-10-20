@@ -6,6 +6,7 @@ import net.neoforged.neoforge.fluids.capability.IFluidHandler;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.function.BiPredicate;
 import java.util.function.Predicate;
 import java.util.function.ToIntFunction;
 
@@ -16,6 +17,7 @@ public class CompactFluidizerInputFluidHandler implements IFluidHandler {
     private final FluidStackHolder _input1;
     private final Predicate<FluidStack> _validator;
     private final ToIntFunction<FluidStack> _sameFluidFirstAmount;
+    private final BiPredicate<FluidStack, FluidStack> _pairValidator;
 
     public CompactFluidizerInputFluidHandler(FluidStackHolder input0, FluidStackHolder input1,
                                              Predicate<FluidStack> validator) {
@@ -24,10 +26,20 @@ public class CompactFluidizerInputFluidHandler implements IFluidHandler {
 
     public CompactFluidizerInputFluidHandler(FluidStackHolder input0, FluidStackHolder input1,
                                              Predicate<FluidStack> validator, ToIntFunction<FluidStack> sameFluidFirstAmount) {
+        this(input0, input1, validator, sameFluidFirstAmount,
+                (first, second) -> first.isEmpty() || second.isEmpty() || !FluidStack.isSameFluidSameComponents(first, second)
+                        || sameFluidFirstAmount.applyAsInt(first) > 0);
+    }
+
+    /** pairValidator 按原料罐顺序检查配方，空栈表示尚未填入的原料。 */
+    public CompactFluidizerInputFluidHandler(FluidStackHolder input0, FluidStackHolder input1,
+                                             Predicate<FluidStack> validator, ToIntFunction<FluidStack> sameFluidFirstAmount,
+                                             BiPredicate<FluidStack, FluidStack> pairValidator) {
         this._input0 = input0;
         this._input1 = input1;
         this._validator = validator;
         this._sameFluidFirstAmount = sameFluidFirstAmount;
+        this._pairValidator = pairValidator;
     }
 
     @Override
@@ -54,11 +66,11 @@ public class CompactFluidizerInputFluidHandler implements IFluidHandler {
             return false;
         }
         final FluidStack stored = holder.getFluidInTank(0);
-        if (!stored.isEmpty()) {
-            return FluidStack.isSameFluidSameComponents(stored, stack);
+        if (!stored.isEmpty() && !FluidStack.isSameFluidSameComponents(stored, stack)) {
+            return false;
         }
         final FluidStack other = (tank == 0 ? this._input1 : this._input0).getFluidInTank(0);
-        return other.isEmpty() || !FluidStack.isSameFluidSameComponents(other, stack) || this._sameFluidFirstAmount.applyAsInt(stack) > 0;
+        return tank == 0 ? this._pairValidator.test(stack, other) : this._pairValidator.test(other, stack);
     }
 
     @Override
@@ -71,19 +83,20 @@ public class CompactFluidizerInputFluidHandler implements IFluidHandler {
         final boolean same0 = !stored0.isEmpty() && FluidStack.isSameFluidSameComponents(stored0, resource);
         final boolean same1 = !stored1.isEmpty() && FluidStack.isSameFluidSameComponents(stored1, resource);
         final int firstAmount = this._sameFluidFirstAmount.applyAsInt(resource);
-        if (firstAmount > 0 && (stored0.isEmpty() || same0) && (stored1.isEmpty() || same1)) {
+        if (firstAmount > 0 && (stored0.isEmpty() || same0) && (stored1.isEmpty() || same1)
+                && this._pairValidator.test(resource, resource)) {
             return this.fillSameFluid(resource, action, firstAmount, stored0.getAmount());
         }
         final FluidStackHolder target;
-        if (same0 && stored0.getAmount() < this._input0.getTankCapacity(0)) {
+        if (same0 && stored0.getAmount() < this._input0.getTankCapacity(0) && this.isFluidValid(0, resource)) {
             target = this._input0;
-        } else if (same1 && stored1.getAmount() < this._input1.getTankCapacity(0)) {
+        } else if (same1 && stored1.getAmount() < this._input1.getTankCapacity(0) && this.isFluidValid(1, resource)) {
             target = this._input1;
         } else if (same0 || same1) {
             return 0;
-        } else if (stored0.isEmpty()) {
+        } else if (stored0.isEmpty() && this.isFluidValid(0, resource)) {
             target = this._input0;
-        } else if (stored1.isEmpty()) {
+        } else if (stored1.isEmpty() && this.isFluidValid(1, resource)) {
             target = this._input1;
         } else {
             return 0;

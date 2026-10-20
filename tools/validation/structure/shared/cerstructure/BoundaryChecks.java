@@ -28,6 +28,7 @@ public final class BoundaryChecks {
     public static void run(ServerLevel level, BiConsumer<String, Boolean> check, Map<String, Object> details) throws Exception {
         for (boolean turbine : List.of(false, true)) smallGenerator(level, turbine, check, details);
         sameFluidRecipe(level, check, details);
+        coexistingFluidRecipes(level, check);
     }
 
     private static ICompactController generator(ServerLevel level, boolean turbine, double scale) {
@@ -91,6 +92,111 @@ public final class BoundaryChecks {
         for (int tick = 0; tick < 500; ++tick) {
             controller.insertEnergy(EnergySystem.ForgeEnergy, WideAmount.from(50_000), OperationMode.Execute);
             controller.tick();
+        }
+    }
+
+    private static CompactFluidizerController fluidizer(ServerLevel level) {
+        var controller = new CompactFluidizerController(level, new BlockPos(10000, 100, 10000), 3, 3, 3);
+        controller.simulateAssembly();
+        controller.setMachineActive(true);
+        return controller;
+    }
+
+    private static void coexistingFluidRecipes(ServerLevel level, BiConsumer<String, Boolean> check) throws Exception {
+        var waterRecipe = mixingRecipe(Fluids.WATER, Fluids.WATER);
+        var lavaRecipe = mixingRecipe(Fluids.LAVA, Fluids.LAVA);
+        var mixedRecipe = mixingRecipe(Fluids.WATER, 500, Fluids.LAVA, 1500);
+        var type = Bridge.fluidizerRecipeType();
+        var cache = ModRecipeType.class.getDeclaredField("_cache");
+        cache.setAccessible(true);
+        Object previous = cache.get(type);
+        try {
+            cache.set(type, List.of(waterRecipe, lavaRecipe));
+            check.accept("fluidizer: unrelated recipe makes lava a globally valid ingredient",
+                    CompactFluidizerController.isValidFluidIngredient(Bridge.fluid(Fluids.LAVA, 1)));
+            for (int occupiedTank = 0; occupiedTank < 2; ++occupiedTank) {
+                var controller = fluidizer(level);
+                var input = controller.getFluidHandler(IoDirection.Input).orElseThrow();
+                input.fill(Bridge.fluid(Fluids.WATER, 1000), Bridge.action(false));
+                if (occupiedTank == 1) {
+                    CompoundTag reversed = Bridge.saveController(controller, level);
+                    reversed.put("fin1", reversed.getCompound("fin0").copy());
+                    reversed.remove("fin0");
+                    controller = fluidizer(level);
+                    Bridge.loadController(controller, reversed, level);
+                    input = controller.getFluidHandler(IoDirection.Input).orElseThrow();
+                }
+                String prefix = "fluidizer: unrelated recipe with occupied tank " + occupiedTank + " ";
+                check.accept(prefix + "starts with exactly one water input",
+                        input.getFluidInTank(occupiedTank).getAmount() == 1000
+                                && input.getFluidInTank(1 - occupiedTank).isEmpty());
+                CompoundTag before = Bridge.saveController(controller, level);
+                var lava = Bridge.fluid(Fluids.LAVA, 1000);
+                check.accept(prefix + "rejects incompatible tank validity",
+                        !input.isFluidValid(1 - occupiedTank, lava));
+                int simulated = input.fill(lava, Bridge.action(true));
+                int inserted = input.fill(lava, Bridge.action(false));
+                check.accept(prefix + "rejects incompatible simulated and executed fill without mutation",
+                        simulated == 0 && inserted == 0 && lava.getAmount() == 1000
+                                && before.equals(Bridge.saveController(controller, level)));
+                check.accept(prefix + "still accepts matching partner",
+                        input.isFluidValid(1 - occupiedTank, Bridge.fluid(Fluids.WATER, 1))
+                                && input.fill(Bridge.fluid(Fluids.WATER, 1000), Bridge.action(false)) == 1000);
+                poweredTicks(controller);
+                check.accept(prefix + "same-fluid recipe still processes exactly",
+                        controller.getOutputTank().getFluidInTank(0).getAmount() == 1000
+                                && input.getFluidInTank(0).isEmpty() && input.getFluidInTank(1).isEmpty());
+            }
+
+            var controller = fluidizer(level);
+            var input = controller.getFluidHandler(IoDirection.Input).orElseThrow();
+            input.fill(Bridge.fluid(Fluids.WATER, 500), Bridge.action(false));
+            cache.set(type, List.of(waterRecipe, lavaRecipe, mixedRecipe));
+            check.accept("fluidizer: added mixed recipe immediately permits compatible different fluid",
+                    input.isFluidValid(1, Bridge.fluid(Fluids.LAVA, 1)));
+            CompoundTag before = Bridge.saveController(controller, level);
+            check.accept("fluidizer: coexisting mixed recipe simulation is exact and read only",
+                    input.fill(Bridge.fluid(Fluids.LAVA, 1500), Bridge.action(true)) == 1500
+                            && before.equals(Bridge.saveController(controller, level)));
+            check.accept("fluidizer: coexisting mixed recipe accepts exact partner",
+                    input.fill(Bridge.fluid(Fluids.LAVA, 1500), Bridge.action(false)) == 1500);
+            poweredTicks(controller);
+            check.accept("fluidizer: coexisting asymmetric mixed recipe consumes and produces exactly",
+                    controller.getOutputTank().getFluidInTank(0).getAmount() == 1000
+                            && input.getFluidInTank(0).isEmpty() && input.getFluidInTank(1).isEmpty());
+
+            input.fill(Bridge.fluid(Fluids.WATER, 500), Bridge.action(false));
+            cache.set(type, List.of(waterRecipe, lavaRecipe));
+            before = Bridge.saveController(controller, level);
+            check.accept("fluidizer: removed mixed recipe immediately rejects incompatible partner",
+                    !input.isFluidValid(1, Bridge.fluid(Fluids.LAVA, 1))
+                            && input.fill(Bridge.fluid(Fluids.LAVA, 1500), Bridge.action(true)) == 0
+                            && input.fill(Bridge.fluid(Fluids.LAVA, 1500), Bridge.action(false)) == 0
+                            && before.equals(Bridge.saveController(controller, level)));
+
+            cache.set(type, List.of(waterRecipe, mixedRecipe));
+            var reverseOrder = fluidizer(level);
+            var reverseInput = reverseOrder.getFluidHandler(IoDirection.Input).orElseThrow();
+            check.accept("fluidizer: empty tank validity follows recipe ingredient order",
+                    !reverseInput.isFluidValid(0, Bridge.fluid(Fluids.LAVA, 1))
+                            && reverseInput.isFluidValid(1, Bridge.fluid(Fluids.LAVA, 1)));
+            before = Bridge.saveController(reverseOrder, level);
+            check.accept("fluidizer: second ingredient first simulation is exact and read only",
+                    reverseInput.fill(Bridge.fluid(Fluids.LAVA, 1500), Bridge.action(true)) == 1500
+                            && before.equals(Bridge.saveController(reverseOrder, level)));
+            check.accept("fluidizer: second ingredient first fills its compatible tank",
+                    reverseInput.fill(Bridge.fluid(Fluids.LAVA, 1500), Bridge.action(false)) == 1500
+                            && reverseInput.getFluidInTank(0).isEmpty()
+                            && reverseInput.getFluidInTank(1).getAmount() == 1500);
+            check.accept("fluidizer: first ingredient can complete reversed insertion order",
+                    reverseInput.isFluidValid(0, Bridge.fluid(Fluids.WATER, 1))
+                            && reverseInput.fill(Bridge.fluid(Fluids.WATER, 500), Bridge.action(false)) == 500);
+            poweredTicks(reverseOrder);
+            check.accept("fluidizer: reversed insertion order processes exact mixed recipe",
+                    reverseOrder.getOutputTank().getFluidInTank(0).getAmount() == 1000
+                            && reverseInput.getFluidInTank(0).isEmpty() && reverseInput.getFluidInTank(1).isEmpty());
+        } finally {
+            cache.set(type, previous);
         }
     }
 
