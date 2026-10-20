@@ -13,6 +13,21 @@ import net.minecraftforge.fluids.capability.IFluidHandler;
 import net.minecraftforge.common.util.FakePlayerFactory;
 
 public final class Bridge {
+    public static it.zerono.mods.zerocore.lib.recipe.ModRecipeType<it.zerono.mods.zerocore.lib.recipe.ModRecipe> fluidizerRecipeType() {
+        return it.zerono.mods.extremereactors.gamecontent.Content.Recipes.FLUIDIZER_RECIPE_TYPE;
+    }
+    public static FluidStack fluid(net.minecraft.world.level.material.Fluid fluid, int amount) {
+        return new FluidStack(fluid, amount);
+    }
+    public static IFluidHandler.FluidAction action(boolean simulate) {
+        return simulate ? IFluidHandler.FluidAction.SIMULATE : IFluidHandler.FluidAction.EXECUTE;
+    }
+    public static CompoundTag saveController(com.compact.extremereactor.common.multiblock.ICompactController controller, ServerLevel level) {
+        return controller.syncDataTo(new CompoundTag(), ISyncableEntity.SyncReason.FullSync);
+    }
+    public static void loadController(com.compact.extremereactor.common.multiblock.ICompactController controller, CompoundTag tag, ServerLevel level) {
+        controller.syncDataFrom(tag, ISyncableEntity.SyncReason.FullSync);
+    }
     public static boolean sameStack(net.minecraft.world.item.ItemStack first, net.minecraft.world.item.ItemStack second) {
         return net.minecraft.world.item.ItemStack.isSameItemSameTags(first, second);
     }

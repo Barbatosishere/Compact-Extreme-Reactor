@@ -172,7 +172,8 @@ public class CompactFluidizerController
                 RecipeIngredientSourceWrapper.wrap(this._fluidInputs0, 0),
                 RecipeIngredientSourceWrapper.wrap(this._fluidInputs1, 0)};
         this._inputFluidHandler = new CompactFluidizerInputFluidHandler(this._fluidInputs0, this._fluidInputs1,
-                CompactFluidizerController::isValidFluidIngredient);
+                CompactFluidizerController::isValidFluidIngredient, CompactFluidizerController::getSameFluidFirstInputAmount,
+                CompactFluidizerController::isValidFluidInputPair);
 
         this._solidHolder = RecipeHolder.builder(this::solidRecipeFactory, recipe -> recipe.getRecipeType().getTicks())
                 .onHasIngredientsChanged(this::consumeIngredientsChanged)
@@ -294,6 +295,26 @@ public class CompactFluidizerController
         ).isPresent();
     }
 
+
+    /** 与 ER 的实际加工顺序一致；忽略数量以允许管道逐次填入，空罐保留配方候选。 */
+    private static boolean isValidFluidInputPair(FluidStack first, FluidStack second) {
+        return Content.Recipes.FLUIDIZER_RECIPE_TYPE.get().findFirst(recipe ->
+                recipe instanceof FluidizerFluidMixingRecipe mixing
+                        && (first.isEmpty() || mixing.getIngredient1().testIgnoreAmount(first))
+                        && (second.isEmpty() || mixing.getIngredient2().testIgnoreAmount(second)))
+                .isPresent();
+    }
+
+    /** 返回同种流体混合配方的第一个输入量；无此类配方时保留第二罐给另一种流体。 */
+    private static int getSameFluidFirstInputAmount(FluidStack stack) {
+        return Content.Recipes.FLUIDIZER_RECIPE_TYPE.get().findFirst(recipe ->
+                recipe instanceof FluidizerFluidMixingRecipe mixing
+                        && mixing.getIngredient1().testIgnoreAmount(stack)
+                        && mixing.getIngredient2().testIgnoreAmount(stack))
+                .map(recipe -> (int) Math.min(Integer.MAX_VALUE,
+                        ((FluidizerFluidMixingRecipe) recipe).getIngredient1().getAmount(stack)))
+                .orElse(0);
+    }
 
     /** 模拟多方块"装配"：触发基类装配回调并按当前原料确定配方模式。 */
     @Override

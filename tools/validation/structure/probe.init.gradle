@@ -8,6 +8,15 @@ gradle.beforeProject { target ->
             probe.compileClasspath += target.sourceSets.main.output + target.sourceSets.main.compileClasspath
             def extension = target.extensions.getByName(target.name == '1.20.1' ? 'legacyForge' : 'neoForge')
             extension.mods.register('cerstructure') { sourceSet probe }
+            ['client', 'server'].each { kind ->
+                target.tasks.named("prepare${kind.capitalize()}Run") {
+                    doLast {
+                        def classpath = target.tasks.named("run${kind.capitalize()}").get().classpathProvider.asPath
+                        def output = target.layout.buildDirectory.file("moddev/${kind}RunClasspath.txt").get().asFile
+                        output.text = '-classpath\n' + groovy.json.JsonOutput.toJson(classpath) + '\n'
+                    }
+                }
+            }
         }
     }
 }
